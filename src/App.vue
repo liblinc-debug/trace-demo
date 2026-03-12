@@ -103,6 +103,7 @@ export default {
         this.marker.setPosition(path[0]);
       }
       this.map.setCenter(path[0]);
+      this.map.setFitView([this.polyline, this.marker]);
     },
     updatePosition(index) {
       if (!this.points[index]) return;
