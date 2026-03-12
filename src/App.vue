@@ -33,6 +33,7 @@ export default {
       marker: null,
       polyline: null,
       chart: null,
+      legendValues: { 'Loss Rate': '-', Ping: '-', Dist: '-' },
     };
   },
   computed: {
@@ -146,7 +147,13 @@ export default {
         const loss = this.points.map(p => p['Loss_Rate(%)']);
         const ping = this.points.map(p => p['Avg_Ping(ms)']);
         const dist = this.points.map(p => p['Dist_to_Arm_Pt(m)']);
+        const names = ['Loss Rate', 'Ping', 'Dist'];
         const option = {
+          legend: {
+            data: names,
+            top: 0,
+            formatter: name => `${name}: ${this.legendValues[name]}`
+          },
           tooltip: {
             trigger: 'axis',
             formatter: params => {
@@ -189,6 +196,11 @@ export default {
         seriesIndex: 0,
         dataIndex: idx
       });
+      const point = this.points[idx] || {};
+      this.legendValues['Loss Rate'] = point.loss != null ? `${point.loss}%` : '-';
+      this.legendValues['Ping'] = point.ping != null ? `${point.ping}ms` : '-';
+      this.legendValues['Dist'] = point.dist != null ? `${point.dist}m` : '-';
+      this.chart.setOption({});
     }
   },
   mounted() {
