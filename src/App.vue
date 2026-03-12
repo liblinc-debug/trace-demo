@@ -83,7 +83,8 @@ export default {
         this.marker = new AMap.Marker({
           position: path[0],
           icon,
-          offset: new AMap.Pixel(-16, -16)
+          offset: new AMap.Pixel(-16, -16),
+          rotation: 0
         });
         this.marker.setMap(this.map);
       } else {
@@ -96,6 +97,9 @@ export default {
       const p = this.points[index];
       const pos = [p.Longitude, p.Latitude, p['Altitude(m)']];
       this.marker.setPosition(pos);
+      if (p.Heading !== undefined) {
+        this.marker.setRotation(p.Heading);
+      }
       this.map.setCenter(pos);
       // update chart pointer
       this.updateChartPointer(index);
@@ -130,7 +134,18 @@ export default {
         const ping = this.points.map(p => p['Avg_Ping(ms)']);
         const dist = this.points.map(p => p['Dist_to_Arm_Pt(m)']);
         const option = {
-          tooltip: { trigger: 'axis' },
+          tooltip: {
+            trigger: 'axis',
+            formatter: params => {
+              if (!params || params.length === 0) return '';
+              const time = params[0].axisValue;
+              let text = `<b>${time}</b><br/>`;
+              params.forEach(p => {
+                text += `${p.marker} ${p.seriesName}: ${p.data}<br/>`;
+              });
+              return text;
+            }
+          },
           xAxis: { type: 'category', data: times },
           yAxis: [{ type: 'value', name: '% / ms / m' }],
           series: [
@@ -141,6 +156,7 @@ export default {
           axisPointer: {
             show: true,
             type: 'line',
+            lineStyle: { color: '#888', width: 1 },
             snap: true
           }
         };
@@ -149,9 +165,14 @@ export default {
     },
     updateChartPointer(idx) {
       if (!this.chart) return;
+      // move axis pointer and show tooltip at current index
       this.chart.dispatchAction({
         type: 'updateAxisPointer',
         xAxisIndex: 0,
+        dataIndex: idx
+      });
+      this.chart.dispatchAction({
+        type: 'showTip',
         seriesIndex: 0,
         dataIndex: idx
       });
@@ -171,17 +192,34 @@ export default {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  background: #f5f5f5;
 }
 .controls {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px;
+  padding: 8px 16px;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+}
+h1 {
+  text-align: center;
+  margin: 12px 0;
+  color: #333;
+  font-size: 1.5em;
+}
+.controls select,
+.controls button,
+.controls input[type="range"] {
+  font-size: 1em;
 }
 .map {
   flex: 1;
+  border: 1px solid #ccc;
 }
 .chart {
   height: 200px;
+  border-top: 1px solid #ddd;
+  background: #fff;
 }
 </style>
