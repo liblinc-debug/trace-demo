@@ -50,13 +50,23 @@ export default {
       const res = await axios.get(`/api/logs/${encodeURIComponent(this.selectedFile)}`);
       const text = res.data;
       const parsed = Papa.parse(text, { header: true, dynamicTyping: true });
-      this.points = parsed.data;
+      // normalize field names for easier use (e.g. heading and altitude)
+      this.points = parsed.data.map(p => ({
+        Timestamp: p.Timestamp,
+        Latitude: p.Latitude,
+        Longitude: p.Longitude,
+        altitude: p['Altitude(m)'],
+        heading: p['Heading(deg)'],
+        loss: p['Loss_Rate(%)'],
+        ping: p['Avg_Ping(ms)'],
+        dist: p['Dist_to_Arm_Pt(m)']
+      }));
       this.currentIndex = 0;
       this.drawTrack();
       this.initChart();
     },
     drawTrack() {
-      const path = this.points.map(p => [p.Longitude, p.Latitude, p['Altitude(m)']]);
+      const path = this.points.map(p => [p.Longitude, p.Latitude, p.altitude]);
       if (!this.map) {
         this.map = new AMap.Map(this.$refs.mapContainer, {
           viewMode: '3D',
@@ -74,13 +84,8 @@ export default {
         });
         this.polyline.setMap(this.map);
       }
-    //   const icon = new AMap.Icon({
-    //     image: 'https://cdn-icons-png.flaticon.com/512/1384/1384060.png',
-    //     size: new AMap.Size(32, 32),
-    //     anchor: 'center'
-    //   });
-
-    const icon = new AMap.Icon({
+      // use a simple colored circle to avoid external asset issues
+      const icon = new AMap.Icon({
         image: 'data:image/svg+xml;base64,' + btoa(`
           <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
             <circle cx="16" cy="16" r="12" fill="#007aff" stroke="#fff" stroke-width="2" />
@@ -89,8 +94,6 @@ export default {
         size: new AMap.Size(32, 32),
         anchor: 'center'
       });
-
-
       if (!this.marker) {
         this.marker = new AMap.Marker({
           position: path[0],
@@ -107,10 +110,11 @@ export default {
     updatePosition(index) {
       if (!this.points[index]) return;
       const p = this.points[index];
-      const pos = [p.Longitude, p.Latitude, p['Altitude(m)']];
-      this.marker.setPosition(pos);
-      if (p.Heading !== undefined) {
-        this.marker.setRotation(p.Heading);
+      const pos = [p.Longitude, p.Latitude, p.altitude];
+      // ensure correct coordinate object for 3D support
+      this.marker.setPosition(new AMap.LngLat(pos[0], pos[1], pos[2]));
+      if (p.heading !== undefined && p.heading !== null) {
+        this.marker.setRotation(p.heading);
       }
       this.map.setCenter(pos);
       // update chart pointer
@@ -142,9 +146,9 @@ export default {
           this.chart = echarts.init(this.$refs.chartContainer);
         }
         const times = this.points.map(p => p.Timestamp);
-        const loss = this.points.map(p => p['Loss_Rate(%)']);
-        const ping = this.points.map(p => p['Avg_Ping(ms)']);
-        const dist = this.points.map(p => p['Dist_to_Arm_Pt(m)']);
+        const loss = this.points.map(p => p.loss);
+        const ping = this.points.map(p => p.ping);
+        const dist = this.points.map(p => p.dist);
         const option = {
           tooltip: {
             trigger: 'axis',
