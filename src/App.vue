@@ -33,6 +33,7 @@ export default {
       marker: null,
       polyline: null,
       chart: null,
+      altitudeTexts: [],  // 添加海拔文本标记数组
       legendValues: { 'Loss Rate': '-', Ping: '-', Dist: '-' },
     };
   },
@@ -51,17 +52,31 @@ export default {
       const res = await axios.get(`/api/logs/${encodeURIComponent(this.selectedFile)}`);
       const text = res.data;
       const parsed = Papa.parse(text, { header: true, dynamicTyping: true });
-      this.points = parsed.data;
+      // 过滤掉无效的经纬度数据
+      this.points = parsed.data.filter(p => 
+        p.Latitude != null && p.Longitude != null && 
+        !isNaN(p.Latitude) && !isNaN(p.Longitude) &&
+        p.Latitude >= -90 && p.Latitude <= 90 &&
+        p.Longitude >= -180 && p.Longitude <= 180
+      );
       this.currentIndex = 0;
-      this.drawTrack();
-      this.initChart();
+      if (this.points.length > 0) {
+        this.drawTrack();
+        this.initChart();
+      } else {
+        alert('没有有效的轨迹数据');
+      }
     },
     drawTrack() {
+      if (this.points.length === 0) return;
+      
       const path = this.points.map(p => [p.Longitude, p.Latitude, p['Altitude(m)']]);
       if (!this.map) {
         this.map = new AMap.Map(this.$refs.mapContainer, {
           viewMode: '3D',
-          zoom: 15
+          zoom: 15,
+          pitch: 60,  // 添加倾斜角度以显示3D效果
+          rotation: 0
         });
       }
       if (this.polyline) {
@@ -71,9 +86,33 @@ export default {
           path,
           strokeColor: '#7ec0ee',
           strokeWeight: 3,
-          showDir: false
+          showDir: false,
+          geodesic: true  // 确保路径正确绘制
         });
         this.polyline.setMap(this.map);
+      }
+
+      // 清除之前的海拔文本标记
+      this.altitudeTexts.forEach(text => text.setMap(null));
+      this.altitudeTexts = [];
+
+      // 每隔10个点添加一个海拔文本标记
+      for (let i = 0; i < this.points.length; i += 10) {
+        const p = this.points[i];
+        const text = new AMap.Text({
+          text: `${p['Altitude(m)'].toFixed(1)}m`,
+          position: [p.Longitude, p.Latitude, p['Altitude(m)']],
+          style: {
+            'background-color': 'rgba(255, 255, 255, 0.8)',
+            'border': '1px solid #ccc',
+            'padding': '2px 4px',
+            'font-size': '12px',
+            'color': '#333'
+          },
+          offset: new AMap.Pixel(0, -20)
+        });
+        text.setMap(this.map);
+        this.altitudeTexts.push(text);
       }
     //   const icon = new AMap.Icon({
     //     image: 'https://cdn-icons-png.flaticon.com/512/1384/1384060.png',
@@ -107,7 +146,7 @@ export default {
       this.map.setFitView([this.polyline, this.marker]);
     },
     updatePosition(index) {
-      if (!this.points[index]) return;
+      if (!this.points[index] || !this.marker) return;
       const p = this.points[index];
       const pos = [p.Longitude, p.Latitude, p['Altitude(m)']];
       this.marker.setPosition(pos);
@@ -144,7 +183,7 @@ export default {
           this.chart = echarts.init(this.$refs.chartContainer);
         }
         const times = this.points.map(p => p.Timestamp);
-        const loss = this.points.map(p => p['Loss_Rate(%)']);
+        const loss = this.points.map(p => p['Loss_Rate(%)'] || p['HB_Loss_Rate(%)'] || 0);
         const ping = this.points.map(p => p['Avg_Ping(ms)']);
         const dist = this.points.map(p => p['Dist_to_Arm_Pt(m)']);
         const names = ['Loss Rate', 'Ping', 'Dist'];
@@ -197,9 +236,9 @@ export default {
         dataIndex: idx
       });
       const point = this.points[idx] || {};
-      this.legendValues['Loss Rate'] = point.loss != null ? `${point.loss}%` : '-';
-      this.legendValues['Ping'] = point.ping != null ? `${point.ping}ms` : '-';
-      this.legendValues['Dist'] = point.dist != null ? `${point.dist}m` : '-';
+      this.legendValues['Loss Rate'] = (point['Loss_Rate(%)'] || point['HB_Loss_Rate(%)']) != null ? `${point['Loss_Rate(%)'] || point['HB_Loss_Rate(%)']}%` : '-';
+      this.legendValues['Ping'] = point['Avg_Ping(ms)'] != null ? `${point['Avg_Ping(ms)']}ms` : '-';
+      this.legendValues['Dist'] = point['Dist_to_Arm_Pt(m)'] != null ? `${point['Dist_to_Arm_Pt(m)']}m` : '-';
       this.chart.setOption({});
     }
   },
