@@ -35,6 +35,8 @@ export default {
       polylines: [],
       chart: null,
       mapScriptLoaded: false,
+      altitudeMarker: null,
+      altitudeLabels: [],
       legendValues: { 'Loss Rate': '-', Ping: '-', Dist: '-', Altitude: '-' },
     };
   },
@@ -169,7 +171,8 @@ export default {
         const avgAlt = segment.reduce((sum, p) => sum + p['Altitude(m)'], 0) / segment.length;
         const ratio = (avgAlt - minAlt) / (maxAlt - minAlt);
         const color = this.getColorFromAltitude(ratio);
-        const segmentPath = segment.map(p => [p.Longitude, p.Latitude]);
+        // 3D 轨迹：[lng, lat, altitude]
+        const segmentPath = segment.map(p => [p.Longitude, p.Latitude, p['Altitude(m)']]);
         const polyline = new AMap.Polyline({
           path: segmentPath,
           strokeColor: color,
@@ -182,10 +185,10 @@ export default {
       });
 
       // 使用 AMap.Text 可能在当前版本无实现，改为仅路线与标记。
-      if (this.altitudeTexts && this.altitudeTexts.length > 0) {
-        this.altitudeTexts.forEach(text => text.setMap(null));
+      if (this.altitudeLabels && this.altitudeLabels.length > 0) {
+        this.altitudeLabels.forEach(label => label.setMap(null));
       }
-      this.altitudeTexts = [];
+      this.altitudeLabels = [];
     //   const icon = new AMap.Icon({
     //     image: 'https://cdn-icons-png.flaticon.com/512/1384/1384060.png',
     //     size: new AMap.Size(32, 32),
@@ -194,8 +197,8 @@ export default {
 
     const icon = new AMap.Icon({
         image: 'data:image/svg+xml;base64,' + btoa(`
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
-            <circle cx="16" cy="16" r="12" fill="#007aff" stroke="#fff" stroke-width="2" />
+          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+            <polygon points="16,4 28,28 4,28" fill="#ff5f1f" stroke="#fff" stroke-width="2"/>
           </svg>
         `),
         size: new AMap.Size(32, 32),
@@ -205,17 +208,43 @@ export default {
 
       if (!this.marker) {
         this.marker = new AMap.Marker({
-          position: [path[0][0], path[0][1]],
+          position: [path[0][0], path[0][1], this.points[0]['Altitude(m)']],
           icon,
           offset: new AMap.Pixel(-16, -16),
-          rotation: 0
+          rotation: this.points[0].Heading || 0
         });
         this.marker.setMap(this.map);
       } else {
-        this.marker.setPosition([path[0][0], path[0][1]]);
+        this.marker.setPosition([path[0][0], path[0][1], this.points[0]['Altitude(m)']]);
+        this.marker.setRotation(this.points[0].Heading || 0);
       }
       this.map.setCenter([path[0][0], path[0][1]]);
       this.map.setFitView([this.marker]);
+      // 海拔显示标记
+      if (this.altitudeMarker) { this.altitudeMarker.setMap(null); }
+      this.altitudeMarker = new AMap.Marker({
+        position: [path[0][0], path[0][1], this.points[0]['Altitude(m)']],
+        content: `<div class="alt-label">${(this.points[0]['Altitude(m)'] || 0).toFixed(1)}m</div>`,
+        offset: new AMap.Pixel(-40, -50),
+        zIndex: 999
+      });
+      this.altitudeMarker.setMap(this.map);
+
+      // 海拔点标记
+      const step = Math.max(1, Math.floor(this.points.length / 30));
+      this.altitudeLabels.forEach(label => label.setMap(null));
+      this.altitudeLabels = [];
+      for (let i = 0; i < this.points.length; i += step) {
+        const p = this.points[i];
+        const label = new AMap.LabelMarker({
+          position: [p.Longitude, p.Latitude],
+          content: `<div class="alt-label">${(p['Altitude(m)'] || 0).toFixed(1)}m</div>`,
+          offset: new AMap.Pixel(-20, -40),
+          zIndex: 900
+        });
+        label.setMap(this.map);
+        this.altitudeLabels.push(label);
+      }
     },
     getColorFromAltitude(ratio) {
       // 从蓝色（低海拔）到红色（高海拔）
@@ -260,12 +289,22 @@ export default {
     updatePosition(index) {
       if (!this.points[index] || !this.marker) return;
       const p = this.points[index];
-      const pos = [p.Longitude, p.Latitude];
+      const pos = [p.Longitude, p.Latitude, p['Altitude(m)']];
       this.marker.setPosition(pos);
-      if (p.Heading !== undefined) {
-        this.marker.setRotation(p.Heading);
-      }
+      this.marker.setRotation(p.Heading != null ? p.Heading : 0);
       this.map.setCenter(pos);
+      if (this.altitudeMarker) {
+        this.altitudeMarker.setPosition(pos);
+        this.altitudeMarker.setContent(`<div class="alt-label">${(p['Altitude(m)'] || 0).toFixed(1)}m</div>`);
+      }
+      if (this.altitudeLabels && this.altitudeLabels.length > 0) {
+        const step = Math.max(1, Math.floor(this.points.length / 30));
+        const idx = Math.round(index / step) * step;
+        const labelPoint = this.points[idx];
+        if (labelPoint && this.altitudeLabels[idx]) {
+          this.altitudeLabels[idx].setMap(this.map);
+        }
+      }
       // update chart pointer
       this.updateChartPointer(index);
     },
@@ -405,5 +444,17 @@ h1 {
   height: 200px;
   border-top: 1px solid #ddd;
   background: #fff;
+}
+</style>
+
+<style>
+.alt-label {
+  font-size: 12px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.5);
+  white-space: nowrap;
 }
 </style>
