@@ -34,7 +34,7 @@ export default {
       polyline: null,
       polylines: [],
       chart: null,
-      altitudeTexts: [],  // 添加海拔文本标记数组
+      mapScriptLoaded: false,
       legendValues: { 'Loss Rate': '-', Ping: '-', Dist: '-', Altitude: '-' },
     };
   },
@@ -47,6 +47,25 @@ export default {
     async fetchFiles() {
       const res = await axios.get('/api/logs');
       this.files = res.data;
+    },
+    loadAMapScript() {
+      if (this.mapScriptLoaded || window.AMap) {
+        this.mapScriptLoaded = true;
+        return Promise.resolve();
+      }
+      return new Promise((resolve, reject) => {
+        const amapKey = import.meta.env.VITE_AMAP_KEY ;
+        const securityJsCode = import.meta.env.VITE_AMAP_SECURITY ;
+        window._AMapSecurityConfig = { securityJsCode };
+        const script = document.createElement('script');
+        script.src = `https://webapi.amap.com/maps?v=2.0&key=${amapKey}&plugin=AMap.ControlBar`;
+        script.onload = () => {
+          this.mapScriptLoaded = true;
+          resolve();
+        };
+        script.onerror = (err) => reject(new Error('AMap script load failed: ' + err));
+        document.head.appendChild(script);
+      });
     },
     async onFileChange() {
       if (!this.selectedFile) return;
@@ -64,14 +83,27 @@ export default {
       );
       this.currentIndex = 0;
       if (this.points.length > 0) {
-        this.drawTrack();
+        try {
+          await this.loadAMapScript();
+          await this.drawTrack();
+        } catch (err) {
+          console.error('AMap 加载失败:', err);
+          alert('地图脚本加载失败，请检查网络或 API Key。');
+        }
         this.initChart();
       } else {
         alert('没有有效的轨迹数据');
       }
     },
-    drawTrack() {
+    async drawTrack() {
       if (this.points.length === 0) return;
+      if (!this.mapScriptLoaded && !window.AMap) {
+        await this.loadAMapScript();
+      }
+      if (typeof AMap === 'undefined') {
+        console.error('AMap 未定义');
+        return;
+      }
       
       // 创建路径
       const path = this.points.map(p => [p.Longitude, p.Latitude]);
@@ -126,28 +158,11 @@ export default {
         this.polylines.push(polyline);
       });
 
-      // 清除之前的海拔文本标记
-      this.altitudeTexts.forEach(text => text.setMap(null));
-      this.altitudeTexts = [];
-
-      // 每隔5个点添加一个海拔文本标记
-      for (let i = 0; i < this.points.length; i += 5) {
-        const p = this.points[i];
-        const text = new AMap.Text({
-          text: `${p['Altitude(m)'].toFixed(1)}m`,
-          position: [p.Longitude, p.Latitude],
-          style: {
-            'background-color': 'rgba(255, 255, 255, 0.8)',
-            'border': '1px solid #ccc',
-            'padding': '2px 4px',
-            'font-size': '12px',
-            'color': '#333'
-          },
-          offset: new AMap.Pixel(0, -20)
-        });
-        text.setMap(this.map);
-        this.altitudeTexts.push(text);
+      // 使用 AMap.Text 可能在当前版本无实现，改为仅路线与标记。
+      if (this.altitudeTexts && this.altitudeTexts.length > 0) {
+        this.altitudeTexts.forEach(text => text.setMap(null));
       }
+      this.altitudeTexts = [];
     //   const icon = new AMap.Icon({
     //     image: 'https://cdn-icons-png.flaticon.com/512/1384/1384060.png',
     //     size: new AMap.Size(32, 32),
@@ -290,6 +305,9 @@ export default {
   },
   mounted() {
     this.fetchFiles();
+    this.loadAMapScript().catch(err => {
+      console.warn('AMap 预加载失败:', err);
+    });
     window.addEventListener('beforeunload', () => {
       if (this.timer) clearInterval(this.timer);
     });
