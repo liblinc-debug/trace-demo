@@ -32,9 +32,10 @@ export default {
       map: null,
       marker: null,
       polyline: null,
+      polylines: [],
       chart: null,
       altitudeTexts: [],  // 添加海拔文本标记数组
-      legendValues: { 'Loss Rate': '-', Ping: '-', Dist: '-' },
+      legendValues: { 'Loss Rate': '-', Ping: '-', Dist: '-', Altitude: '-' },
     };
   },
   computed: {
@@ -55,9 +56,11 @@ export default {
       // 过滤掉无效的经纬度数据
       this.points = parsed.data.filter(p => 
         p.Latitude != null && p.Longitude != null && 
-        !isNaN(p.Latitude) && !isNaN(p.Longitude) &&
+        p['Altitude(m)'] != null &&
+        !isNaN(p.Latitude) && !isNaN(p.Longitude) && !isNaN(p['Altitude(m)']) &&
         p.Latitude >= -90 && p.Latitude <= 90 &&
-        p.Longitude >= -180 && p.Longitude <= 180
+        p.Longitude >= -180 && p.Longitude <= 180 &&
+        p['Altitude(m)'] >= 0
       );
       this.currentIndex = 0;
       if (this.points.length > 0) {
@@ -70,38 +73,69 @@ export default {
     drawTrack() {
       if (this.points.length === 0) return;
       
-      const path = this.points.map(p => [p.Longitude, p.Latitude, p['Altitude(m)']]);
+      // 创建路径
+      const path = this.points.map(p => [p.Longitude, p.Latitude]);
       if (!this.map) {
         this.map = new AMap.Map(this.$refs.mapContainer, {
           viewMode: '3D',
           zoom: 15,
-          pitch: 60,  // 添加倾斜角度以显示3D效果
+          center: path[0],
+          pitch: 60,
           rotation: 0
         });
       }
-      if (this.polyline) {
-        this.polyline.setPath(path);
-      } else {
-        this.polyline = new AMap.Polyline({
-          path,
-          strokeColor: '#7ec0ee',
-          strokeWeight: 3,
-          showDir: false,
-          geodesic: true  // 确保路径正确绘制
-        });
-        this.polyline.setMap(this.map);
+
+      // 清除之前的多段线
+      if (this.polylines) {
+        this.polylines.forEach(poly => poly.setMap(null));
       }
+      this.polylines = [];
+
+      // 根据高度将路径分成段，每段用不同颜色
+      const maxAlt = Math.max(...this.points.map(p => p['Altitude(m)']));
+      const minAlt = Math.min(...this.points.map(p => p['Altitude(m)']));
+      const segments = [];
+      let currentSegment = [this.points[0]];
+
+      for (let i = 1; i < this.points.length; i++) {
+        const prev = this.points[i-1];
+        const curr = this.points[i];
+        if (Math.abs(curr['Altitude(m)'] - prev['Altitude(m)']) > 1) { // 如果高度变化超过1m，分段
+          segments.push(currentSegment);
+          currentSegment = [curr];
+        } else {
+          currentSegment.push(curr);
+        }
+      }
+      segments.push(currentSegment);
+
+      // 为每个段创建Polyline，用颜色表示高度
+      segments.forEach(segment => {
+        const avgAlt = segment.reduce((sum, p) => sum + p['Altitude(m)'], 0) / segment.length;
+        const ratio = (avgAlt - minAlt) / (maxAlt - minAlt);
+        const color = this.getColorFromAltitude(ratio);
+        const segmentPath = segment.map(p => [p.Longitude, p.Latitude]);
+        const polyline = new AMap.Polyline({
+          path: segmentPath,
+          strokeColor: color,
+          strokeWeight: 4,
+          showDir: false,
+          geodesic: true
+        });
+        polyline.setMap(this.map);
+        this.polylines.push(polyline);
+      });
 
       // 清除之前的海拔文本标记
       this.altitudeTexts.forEach(text => text.setMap(null));
       this.altitudeTexts = [];
 
-      // 每隔10个点添加一个海拔文本标记
-      for (let i = 0; i < this.points.length; i += 10) {
+      // 每隔5个点添加一个海拔文本标记
+      for (let i = 0; i < this.points.length; i += 5) {
         const p = this.points[i];
         const text = new AMap.Text({
           text: `${p['Altitude(m)'].toFixed(1)}m`,
-          position: [p.Longitude, p.Latitude, p['Altitude(m)']],
+          position: [p.Longitude, p.Latitude],
           style: {
             'background-color': 'rgba(255, 255, 255, 0.8)',
             'border': '1px solid #ccc',
@@ -133,22 +167,29 @@ export default {
 
       if (!this.marker) {
         this.marker = new AMap.Marker({
-          position: path[0],
+          position: [path[0][0], path[0][1]],
           icon,
           offset: new AMap.Pixel(-16, -16),
           rotation: 0
         });
         this.marker.setMap(this.map);
       } else {
-        this.marker.setPosition(path[0]);
+        this.marker.setPosition([path[0][0], path[0][1]]);
       }
-      this.map.setCenter(path[0]);
-      this.map.setFitView([this.polyline, this.marker]);
+      this.map.setCenter([path[0][0], path[0][1]]);
+      this.map.setFitView([this.marker]);
+    },
+    getColorFromAltitude(ratio) {
+      // 从蓝色（低海拔）到红色（高海拔）
+      const r = Math.floor(255 * ratio);
+      const g = Math.floor(255 * (1 - ratio));
+      const b = Math.floor(255 * (1 - ratio));
+      return `rgb(${r}, ${g}, ${b})`;
     },
     updatePosition(index) {
       if (!this.points[index] || !this.marker) return;
       const p = this.points[index];
-      const pos = [p.Longitude, p.Latitude, p['Altitude(m)']];
+      const pos = [p.Longitude, p.Latitude];
       this.marker.setPosition(pos);
       if (p.Heading !== undefined) {
         this.marker.setRotation(p.Heading);
@@ -186,7 +227,8 @@ export default {
         const loss = this.points.map(p => p['Loss_Rate(%)'] || p['HB_Loss_Rate(%)'] || 0);
         const ping = this.points.map(p => p['Avg_Ping(ms)']);
         const dist = this.points.map(p => p['Dist_to_Arm_Pt(m)']);
-        const names = ['Loss Rate', 'Ping', 'Dist'];
+        const altitude = this.points.map(p => p['Altitude(m)']);
+        const names = ['Loss Rate', 'Ping', 'Dist', 'Altitude'];
         const option = {
           legend: {
             data: names,
@@ -206,11 +248,15 @@ export default {
             }
           },
           xAxis: { type: 'category', data: times },
-          yAxis: [{ type: 'value', name: '% / ms / m' }],
+          yAxis: [
+            { type: 'value', name: '% / ms / m' },
+            { type: 'value', name: 'Altitude (m)', position: 'right' }
+          ],
           series: [
             { name: 'Loss Rate', type: 'line', data: loss },
             { name: 'Ping', type: 'line', data: ping },
-            { name: 'Dist', type: 'line', data: dist }
+            { name: 'Dist', type: 'line', data: dist },
+            { name: 'Altitude', type: 'line', data: altitude, yAxisIndex: 1 }
           ],
           axisPointer: {
             show: true,
@@ -239,7 +285,7 @@ export default {
       this.legendValues['Loss Rate'] = (point['Loss_Rate(%)'] || point['HB_Loss_Rate(%)']) != null ? `${point['Loss_Rate(%)'] || point['HB_Loss_Rate(%)']}%` : '-';
       this.legendValues['Ping'] = point['Avg_Ping(ms)'] != null ? `${point['Avg_Ping(ms)']}ms` : '-';
       this.legendValues['Dist'] = point['Dist_to_Arm_Pt(m)'] != null ? `${point['Dist_to_Arm_Pt(m)']}m` : '-';
-      this.chart.setOption({});
+      this.legendValues['Altitude'] = point['Altitude(m)'] != null ? `${point['Altitude(m)']}m` : '-';
     }
   },
   mounted() {
