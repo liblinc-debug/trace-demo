@@ -242,6 +242,7 @@ export default {
       });
 
       const initialHeading = this.points[0].Heading != null ? this.points[0].Heading : 0;
+      const adjustedInitialHeading = this.getMarkerHeading(initialHeading);
       if (!this.marker) {
         this.marker = new AMap.Marker({
           position: [path[0][0], path[0][1], this.points[0]['Altitude(m)']],
@@ -252,15 +253,22 @@ export default {
       } else {
         this.marker.setPosition([path[0][0], path[0][1], this.points[0]['Altitude(m)']]);
       }
-      if (typeof this.marker.setRotation === 'function') {
-        this.marker.setRotation(initialHeading);
-      } else if (typeof this.marker.setAngle === 'function') {
-        this.marker.setAngle(initialHeading);
-      } else if (typeof this.marker.setOptions === 'function') {
-        this.marker.setOptions({ rotation: initialHeading, angle: initialHeading });
-      }
+      this.applyMarkerHeading(this.marker, adjustedInitialHeading);
       this.map.setCenter([path[0][0], path[0][1]]);
       this.map.setFitView([this.marker]);
+      // 在视角变化后更新飞机航向
+      if (this.map && this.marker) {
+        const refreshHeading = () => {
+          const idx = Math.min(Math.max(0, this.currentIndex), this.points.length - 1);
+          if (this.points[idx] && this.points[idx].Heading != null) {
+            const heading = this.points[idx].Heading;
+            this.applyMarkerHeading(this.marker, this.getMarkerHeading(heading));
+          }
+        };
+        this.map.on('moveend', refreshHeading);
+        this.map.on('rotate', refreshHeading);
+        this.map.on('zoomchange', refreshHeading);
+      }
       // 海拔显示标记
       if (this.altitudeMarker) { this.altitudeMarker.setMap(null); }
       this.altitudeMarker = new AMap.Marker({
@@ -331,19 +339,29 @@ export default {
       const mgLon = lon + (dLon * 180.0) / (a / sqrtMagic * Math.cos(radLat) * pi);
       return [mgLat, mgLon];
     },
+    applyMarkerHeading(marker, heading) {
+      if (!marker) return;
+      if (typeof marker.setRotation === 'function') {
+        marker.setRotation(heading);
+      } else if (typeof marker.setAngle === 'function') {
+        marker.setAngle(heading);
+      } else if (typeof marker.setOptions === 'function') {
+        marker.setOptions({ rotation: heading, angle: heading });
+      }
+    },
+    getMarkerHeading(heading) {
+      const mapRotation = (this.map && typeof this.map.getRotation === 'function') ? this.map.getRotation() : 0;
+      // 当前展示角 = 航向 + 地图旋转偏移量
+      return (heading + mapRotation + 360) % 360;
+    },
     updatePosition(index) {
       if (!this.points[index] || !this.marker) return;
       const p = this.points[index];
       const pos = [p.Longitude, p.Latitude, p['Altitude(m)']];
       this.marker.setPosition(pos);
       const heading = p['Heading(deg)'] != null ? p['Heading(deg)'] : 0;
-      if (typeof this.marker.setRotation === 'function') {
-        this.marker.setRotation(heading);
-      } else if (typeof this.marker.setAngle === 'function') {
-        this.marker.setAngle(heading);
-      } else if (typeof this.marker.setOptions === 'function') {
-        this.marker.setOptions({ rotation: heading, angle: heading });
-      }
+      const markerHeading = this.getMarkerHeading(heading);
+      this.applyMarkerHeading(this.marker, markerHeading);
       this.map.setCenter(pos);
       if (this.altitudeMarker) {
         this.altitudeMarker.setPosition(pos);
