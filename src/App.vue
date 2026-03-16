@@ -175,12 +175,14 @@ export default {
         const segmentPath = segment.map(p => [p.Longitude, p.Latitude, p['Altitude(m)']]);
         const polyline = new AMap.Polyline({
           path: segmentPath,
+          enableAltitude: true,
           strokeColor: color,
           strokeWeight: 4,
           showDir: false,
           geodesic: true
         });
         polyline.setMap(this.map);
+        this.map.add(polyline);
         this.polylines.push(polyline);
       });
 
