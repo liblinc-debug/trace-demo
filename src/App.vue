@@ -244,17 +244,17 @@ export default {
         }
       });
       this.altitudeLabels = [];
-      for (let i = 0; i < this.points.length; i += step) {
-        const p = this.points[i];
-        const label = new AMap.Marker({
-          position: [p.Longitude, p.Latitude],
-          content: `<div class="alt-label">${(p['Altitude(m)'] || 0).toFixed(1)}m</div>`,
-          offset: new AMap.Pixel(-20, -40),
-          zIndex: 900
-        });
-        label.setMap(this.map);
-        this.altitudeLabels.push(label);
-      }
+      // for (let i = 0; i < this.points.length; i += step) {
+      //   const p = this.points[i];
+      //   const label = new AMap.Marker({
+      //     position: [p.Longitude, p.Latitude],
+      //     content: `<div class="alt-label">${(p['Altitude(m)'] || 0).toFixed(1)}m</div>`,
+      //     offset: new AMap.Pixel(-20, -40),
+      //     zIndex: 900
+      //   });
+      //   label.setMap(this.map);
+      //   this.altitudeLabels.push(label);
+      // }
     },
     getColorFromAltitude(ratio) {
       // 从蓝色（低海拔）到红色（高海拔）
