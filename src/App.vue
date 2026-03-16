@@ -31,7 +31,8 @@ export default {
       timer: null,
       map: null,
       marker: null,
-      polyline: null,
+      locaContainer: null,
+      locaLineLayer: null,
       polylines: [],
       chart: null,
       mapScriptLoaded: false,
@@ -55,23 +56,36 @@ export default {
       }
     },
     loadAMapScript() {
-      if (this.mapScriptLoaded || window.AMap) {
-        this.mapScriptLoaded = true;
+      if (this.mapScriptLoaded && window.AMap) {
         return Promise.resolve();
       }
-      return new Promise((resolve, reject) => {
+      if (this.loadingMapScript) {
+        return this.loadingMapScript;
+      }
+      this.loadingMapScript = new Promise((resolve, reject) => {
         const amapKey = import.meta.env.VITE_AMAP_KEY || 'df08b9775f1b5949a902daf1696e6560';
         const securityJsCode = import.meta.env.VITE_AMAP_SECURITY || '3b542abbb6dde06fb6d0a6692089a30f';
         window._AMapSecurityConfig = { securityJsCode };
-        const script = document.createElement('script');
-        script.src = `https://webapi.amap.com/maps?v=2.0&key=${amapKey}&plugin=AMap.ControlBar`;
-        script.onload = () => {
+
+        const loadScript = (src) => new Promise((res, rej) => {
+          const script = document.createElement('script');
+          script.src = src;
+          script.onload = res;
+          script.onerror = (err) => rej(new Error('Script load failed: ' + src + ' - ' + err));
+          document.head.appendChild(script);
+        });
+
+        Promise.all([
+          loadScript(`https://webapi.amap.com/maps?v=2.0&key=${amapKey}&plugin=AMap.ControlBar`),
+          loadScript(`https://webapi.amap.com/loca?v=2.0.0&key=${amapKey}`)
+        ]).then(() => {
           this.mapScriptLoaded = true;
           resolve();
-        };
-        script.onerror = (err) => reject(new Error('AMap script load failed: ' + err));
-        document.head.appendChild(script);
+        }).catch(reject);
+      }).finally(() => {
+        this.loadingMapScript = null;
       });
+      return this.loadingMapScript;
     },
     async onFileChange() {
       if (!this.selectedFile) return;
@@ -142,49 +156,61 @@ export default {
         }
       }
 
-      // 清除之前的多段线
+      // 清除之前的多段线或 Loca 图层
       if (this.polylines) {
         this.polylines.forEach(poly => poly.setMap(null));
       }
       this.polylines = [];
-
-      // 根据高度将路径分成段，每段用不同颜色
-      const maxAlt = Math.max(...this.points.map(p => p['Altitude(m)']));
-      const minAlt = Math.min(...this.points.map(p => p['Altitude(m)']));
-      const segments = [];
-      let currentSegment = [this.points[0]];
-
-      for (let i = 1; i < this.points.length; i++) {
-        const prev = this.points[i-1];
-        const curr = this.points[i];
-        if (Math.abs(curr['Altitude(m)'] - prev['Altitude(m)']) > 1) { // 如果高度变化超过1m，分段
-          segments.push(currentSegment);
-          currentSegment = [curr];
-        } else {
-          currentSegment.push(curr);
-        }
+      if (this.locaLineLayer) {
+        this.locaLineLayer.setMap(null);
+        this.locaLineLayer = null;
       }
-      segments.push(currentSegment);
+      if (this.locaContainer && typeof this.locaContainer.clear === 'function') {
+        this.locaContainer.clear();
+      }
 
-      // 为每个段创建Polyline，用颜色表示高度
-      segments.forEach(segment => {
-        const avgAlt = segment.reduce((sum, p) => sum + p['Altitude(m)'], 0) / segment.length;
-        const ratio = (avgAlt - minAlt) / (maxAlt - minAlt);
-        const color = this.getColorFromAltitude(ratio);
-        // 3D 轨迹：[lng, lat, altitude]
-        const segmentPath = segment.map(p => [p.Longitude, p.Latitude, p['Altitude(m)']]);
+      // 3D轨迹线数据 [lng, lat, altitude]
+      const lineCoords = this.points.map(p => [p.Longitude, p.Latitude, p['Altitude(m)']]);
+      const hasLoca = window.AMap && window.Loca && typeof window.Loca.Container === 'function';
+      if (hasLoca) {
+        if (!this.locaContainer) {
+          this.locaContainer = new Loca.Container({ map: this.map });
+        }
+        const source = new Loca.GeoJSONSource({
+          data: {
+            type: 'FeatureCollection',
+            features: [{
+              type: 'Feature',
+              geometry: {
+                type: 'LineString',
+                coordinates: lineCoords
+              },
+              properties: {}
+            }]
+          }
+        });
+        this.locaLineLayer = new Loca.LineLayer({
+          zIndex: 30,
+          lineWidth: 1.0,
+          opacity: 0.55
+        });
+        this.locaLineLayer.setSource(source, {
+          height: (index, feature) => feature.geometry.coordinates[index][2],
+          color: '#ffa500'
+        });
+        this.locaContainer.add(this.locaLineLayer);
+      } else {
         const polyline = new AMap.Polyline({
-          path: segmentPath,
+          path: lineCoords,
           enableAltitude: true,
-          strokeColor: color,
+          strokeColor: '#ffa500',
           strokeWeight: 4,
           showDir: false,
           geodesic: true
         });
         polyline.setMap(this.map);
-        this.map.add(polyline);
         this.polylines.push(polyline);
-      });
+      }
 
       // 使用 AMap.Text 可能在当前版本无实现，改为仅路线与标记。
       if (this.altitudeLabels && this.altitudeLabels.length > 0) {
