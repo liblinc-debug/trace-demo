@@ -8,6 +8,10 @@
       </select>
       <button @click="play" :disabled="!canPlay">播放</button>
       <button @click="pause" :disabled="!isPlaying">暂停</button>
+      <span>速度：</span>
+      <select v-model.number="playbackRate">
+        <option v-for="r in speedOptions" :key="r" :value="r">{{ r }}x</option>
+      </select>
       <input type="range" min="0" :max="points.length-1" v-model.number="currentIndex" @input="onSliderChange" />
     </div>
     <div class="map" ref="mapContainer"></div>
@@ -39,6 +43,8 @@ export default {
       altitudeMarker: null,
       altitudeLabels: [],
       legendValues: { 'Loss Rate': '-', Ping: '-', Dist: '-', Altitude: '-' },
+      playbackRate: 1,
+      speedOptions: [0.5, 1, 1.5, 2]
     };
   },
   computed: {
@@ -373,6 +379,7 @@ export default {
     play() {
       if (this.isPlaying) return;
       this.isPlaying = true;
+      const interval = 200 / this.playbackRate;
       this.timer = setInterval(() => {
         if (this.currentIndex < this.points.length - 1) {
           this.currentIndex++;
@@ -380,7 +387,7 @@ export default {
         } else {
           this.pause();
         }
-      }, 200);
+      }, interval);
     },
     pause() {
       this.isPlaying = false;
