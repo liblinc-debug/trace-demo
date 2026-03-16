@@ -76,7 +76,7 @@ export default {
         });
 
         Promise.all([
-          loadScript(`https://webapi.amap.com/maps?v=2.0&key=${amapKey}&plugin=AMap.ControlBar`),
+          loadScript(`https://webapi.amap.com/maps?v=2.0&key=${amapKey}&plugin=AMap.ControlBar,AMap.MoveAnimation,AMap.Scale`),
           loadScript(`https://webapi.amap.com/loca?v=2.0.0&key=${amapKey}`)
         ]).then(() => {
           this.mapScriptLoaded = true;
@@ -147,6 +147,9 @@ export default {
           rotation: 0,
           layers: [new AMap.TileLayer.Satellite()]
         });
+        // 增加视角导航与缩放控件
+        this.map.addControl(new AMap.ControlBar({ position: 'RB' }));
+        this.map.addControl(new AMap.Scale());
       } else {
         // 如果已有地图，确保设置卫星图层
         const layers = this.map.getLayers ? this.map.getLayers() : [];
