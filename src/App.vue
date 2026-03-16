@@ -465,6 +465,11 @@ export default {
       this.legendValues['Ping'] = point['Avg_Ping(ms)'] != null ? `${point['Avg_Ping(ms)']}ms` : '-';
       this.legendValues['Dist'] = point['Dist_to_Arm_Pt(m)'] != null ? `${point['Dist_to_Arm_Pt(m)']}m` : '-';
       this.legendValues['Altitude'] = point['Altitude(m)'] != null ? `${point['Altitude(m)']}m` : '-';
+      this.chart.setOption({
+        legend: {
+          formatter: name => `${name}: ${this.legendValues[name]}`
+        }
+      });
     }
   },
   mounted() {
