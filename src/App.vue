@@ -195,16 +195,20 @@ export default {
     //     anchor: 'center'
     //   });
 
+    // const icon = new AMap.Icon({
+    //     image: 'data:image/svg+xml;base64,' + btoa(`
+    //       <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+    //         <polygon points="16,4 28,28 4,28" fill="#ff5f1f" stroke="#fff" stroke-width="2"/>
+    //       </svg>
+    //     `),
+    //     size: new AMap.Size(32, 32),
+    //     anchor: 'center'
+    //   });
     const icon = new AMap.Icon({
-        image: 'data:image/svg+xml;base64,' + btoa(`
-          <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-            <polygon points="16,4 28,28 4,28" fill="#ff5f1f" stroke="#fff" stroke-width="2"/>
-          </svg>
-        `),
+        image: 'http://qh.airsensor.top:7200/img/mobile_online.acd05a0a.svg',
         size: new AMap.Size(32, 32),
         anchor: 'center'
       });
-
 
       const initialHeading = this.points[0].Heading != null ? this.points[0].Heading : 0;
       if (!this.marker) {
@@ -301,7 +305,7 @@ export default {
       const p = this.points[index];
       const pos = [p.Longitude, p.Latitude, p['Altitude(m)']];
       this.marker.setPosition(pos);
-      const heading = p.Heading != null ? p.Heading : 0;
+      const heading = p['Heading(deg)'] != null ? p['Heading(deg)'] : 0;
       if (typeof this.marker.setRotation === 'function') {
         this.marker.setRotation(heading);
       } else if (typeof this.marker.setAngle === 'function') {
