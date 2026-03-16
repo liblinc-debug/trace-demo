@@ -206,17 +206,23 @@ export default {
       });
 
 
+      const initialHeading = this.points[0].Heading != null ? this.points[0].Heading : 0;
       if (!this.marker) {
         this.marker = new AMap.Marker({
           position: [path[0][0], path[0][1], this.points[0]['Altitude(m)']],
           icon,
-          offset: new AMap.Pixel(-16, -16),
-          rotation: this.points[0].Heading || 0
+          offset: new AMap.Pixel(-16, -16)
         });
         this.marker.setMap(this.map);
       } else {
         this.marker.setPosition([path[0][0], path[0][1], this.points[0]['Altitude(m)']]);
-        this.marker.setRotation(this.points[0].Heading || 0);
+      }
+      if (typeof this.marker.setRotation === 'function') {
+        this.marker.setRotation(initialHeading);
+      } else if (typeof this.marker.setAngle === 'function') {
+        this.marker.setAngle(initialHeading);
+      } else if (typeof this.marker.setOptions === 'function') {
+        this.marker.setOptions({ rotation: initialHeading, angle: initialHeading });
       }
       this.map.setCenter([path[0][0], path[0][1]]);
       this.map.setFitView([this.marker]);
@@ -232,11 +238,15 @@ export default {
 
       // 海拔点标记
       const step = Math.max(1, Math.floor(this.points.length / 30));
-      this.altitudeLabels.forEach(label => label.setMap(null));
+      this.altitudeLabels.forEach(label => {
+        if (label && typeof label.setMap === 'function') {
+          label.setMap(null);
+        }
+      });
       this.altitudeLabels = [];
       for (let i = 0; i < this.points.length; i += step) {
         const p = this.points[i];
-        const label = new AMap.LabelMarker({
+        const label = new AMap.Marker({
           position: [p.Longitude, p.Latitude],
           content: `<div class="alt-label">${(p['Altitude(m)'] || 0).toFixed(1)}m</div>`,
           offset: new AMap.Pixel(-20, -40),
@@ -291,19 +301,18 @@ export default {
       const p = this.points[index];
       const pos = [p.Longitude, p.Latitude, p['Altitude(m)']];
       this.marker.setPosition(pos);
-      this.marker.setRotation(p.Heading != null ? p.Heading : 0);
+      const heading = p.Heading != null ? p.Heading : 0;
+      if (typeof this.marker.setRotation === 'function') {
+        this.marker.setRotation(heading);
+      } else if (typeof this.marker.setAngle === 'function') {
+        this.marker.setAngle(heading);
+      } else if (typeof this.marker.setOptions === 'function') {
+        this.marker.setOptions({ rotation: heading, angle: heading });
+      }
       this.map.setCenter(pos);
       if (this.altitudeMarker) {
         this.altitudeMarker.setPosition(pos);
         this.altitudeMarker.setContent(`<div class="alt-label">${(p['Altitude(m)'] || 0).toFixed(1)}m</div>`);
-      }
-      if (this.altitudeLabels && this.altitudeLabels.length > 0) {
-        const step = Math.max(1, Math.floor(this.points.length / 30));
-        const idx = Math.round(index / step) * step;
-        const labelPoint = this.points[idx];
-        if (labelPoint && this.altitudeLabels[idx]) {
-          this.altitudeLabels[idx].setMap(this.map);
-        }
       }
       // update chart pointer
       this.updateChartPointer(index);
