@@ -3,3 +3,6 @@ dist/
 .env
 *.zip
 logs/**/*.csv
+*/**/.DS_Store
+.DS_Store
+logs/**/*.json
