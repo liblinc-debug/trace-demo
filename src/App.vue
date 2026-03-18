@@ -2,6 +2,10 @@
   <div class="app-container">
     <h1>无人机轨迹回放</h1>
     <div class="controls">
+      <select v-model="selectedDir" @change="onDirChange">
+        <option value="" disabled>请选择日期目录...</option>
+        <option v-for="d in dirs" :key="d" :value="d">{{ d }}</option>
+      </select>
       <select v-model="selectedFile" @change="onFileChange">
         <option value="" disabled>请选择飞行记录...</option>
         <option v-for="f in files" :key="f" :value="f">{{ f }}</option>
@@ -27,7 +31,9 @@ import * as echarts from 'echarts';
 export default {
   data() {
     return {
+      dirs: [],
       files: [],
+      selectedDir: '',
       selectedFile: '',
       points: [],
       currentIndex: 0,
@@ -53,12 +59,62 @@ export default {
     }
   },
   methods: {
-    async fetchFiles() {
+    async fetchLogs() {
       const res = await axios.get('/api/logs');
-      this.files = res.data;
-      if (this.files && this.files.length > 0) {
+      this.dirs = Array.isArray(res.data) ? res.data : [];
+      if (this.dirs.length > 0) {
+        this.selectedDir = this.dirs[0];
+        await this.fetchFilesForDir();
+      }
+    },
+    async fetchFilesForDir() {
+      if (!this.selectedDir) {
+        this.files = [];
+        this.selectedFile = '';
+        return;
+      }
+      const res = await axios.get('/api/logs', { params: { dir: this.selectedDir } });
+      const files = Array.isArray(res.data) ? res.data : [];
+      this.files = files.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+      if (this.files.length > 0) {
         this.selectedFile = this.files[0];
         await this.onFileChange();
+      } else {
+        this.selectedFile = '';
+        this.points = [];
+      }
+    },
+    async onDirChange() {
+      await this.fetchFilesForDir();
+    },
+    async onFileChange() {
+      if (!this.selectedDir || !this.selectedFile) return;
+      const res = await axios.get('/api/logs/file', {
+        params: { dir: this.selectedDir, name: this.selectedFile }
+      });
+      const text = res.data;
+      const parsed = Papa.parse(text, { header: true, dynamicTyping: true });
+      // 过滤掉无效的经纬度数据
+      this.points = parsed.data.filter(p => 
+        p.Latitude != null && p.Longitude != null && 
+        p['Altitude(m)'] != null &&
+        !isNaN(p.Latitude) && !isNaN(p.Longitude) && !isNaN(p['Altitude(m)']) &&
+        p.Latitude >= -90 && p.Latitude <= 90 &&
+        p.Longitude >= -180 && p.Longitude <= 180 &&
+        p['Altitude(m)'] >= 0
+      );
+      this.currentIndex = 0;
+      if (this.points.length > 0) {
+        try {
+          await this.loadAMapScript();
+          await this.drawTrack();
+        } catch (err) {
+          console.error('AMap 加载失败:', err);
+          alert('地图脚本加载失败，请检查网络或 API Key。');
+        }
+        this.initChart();
+      } else {
+        alert('没有有效的轨迹数据');
       }
     },
     loadAMapScript() {
@@ -92,34 +148,6 @@ export default {
         this.loadingMapScript = null;
       });
       return this.loadingMapScript;
-    },
-    async onFileChange() {
-      if (!this.selectedFile) return;
-      const res = await axios.get(`/api/logs/${encodeURIComponent(this.selectedFile)}`);
-      const text = res.data;
-      const parsed = Papa.parse(text, { header: true, dynamicTyping: true });
-      // 过滤掉无效的经纬度数据
-      this.points = parsed.data.filter(p => 
-        p.Latitude != null && p.Longitude != null && 
-        p['Altitude(m)'] != null &&
-        !isNaN(p.Latitude) && !isNaN(p.Longitude) && !isNaN(p['Altitude(m)']) &&
-        p.Latitude >= -90 && p.Latitude <= 90 &&
-        p.Longitude >= -180 && p.Longitude <= 180 &&
-        p['Altitude(m)'] >= 0
-      );
-      this.currentIndex = 0;
-      if (this.points.length > 0) {
-        try {
-          await this.loadAMapScript();
-          await this.drawTrack();
-        } catch (err) {
-          console.error('AMap 加载失败:', err);
-          alert('地图脚本加载失败，请检查网络或 API Key。');
-        }
-        this.initChart();
-      } else {
-        alert('没有有效的轨迹数据');
-      }
     },
     async drawTrack() {
       if (this.points.length === 0) return;
@@ -473,7 +501,7 @@ export default {
     }
   },
   mounted() {
-    this.fetchFiles();
+    this.fetchLogs();
     this.loadAMapScript().catch(err => {
       console.warn('AMap 预加载失败:', err);
     });
