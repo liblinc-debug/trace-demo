@@ -242,7 +242,7 @@ export default {
     //     anchor: 'center'
     //   });
     const icon = new AMap.Icon({
-        image: 'http://qh.airsensor.top:7200/img/mobile_online.acd05a0a.svg',
+        image: 'https://static.airsensor.top/static/img/icon/move_online.svg',
         size: new AMap.Size(32, 32),
         anchor: 'center'
       });
