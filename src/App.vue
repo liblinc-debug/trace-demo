@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container">
+  <div class="app-container" :class="themeMode">
     <h1>无人机轨迹回放</h1>
     <div class="controls">
       <select v-model="selectedDir" @change="onDirChange">
@@ -12,10 +12,18 @@
       </select>
       <button @click="play" :disabled="!canPlay">播放</button>
       <button @click="pause" :disabled="!isPlaying">暂停</button>
-      <span>速度：</span>
-      <select v-model.number="playbackRate">
-        <option v-for="r in speedOptions" :key="r" :value="r">{{ r }}x</option>
-      </select>
+      <label class="control-label">
+        <span>风格：</span>
+        <select v-model="themeMode">
+          <option v-for="theme in themeOptions" :key="theme.value" :value="theme.value">{{ theme.label }}</option>
+        </select>
+      </label>
+      <label class="control-label">
+        <span>速度：</span>
+        <select v-model.number="playbackRate">
+          <option v-for="r in speedOptions" :key="r" :value="r">{{ r }}x</option>
+        </select>
+      </label>
       <input type="range" min="0" :max="points.length-1" v-model.number="currentIndex" @input="onSliderChange" />
     </div>
     <div class="map" ref="mapContainer"></div>
@@ -48,9 +56,14 @@ export default {
       mapScriptLoaded: false,
       altitudeMarker: null,
       altitudeLabels: [],
-      legendValues: { 'Loss Rate': '-', Ping: '-', Dist: '-', Altitude: '-' },
+      legendValues: {},
+      themeMode: 'day',
+      themeOptions: [
+        { value: 'day', label: '白天' },
+        { value: 'night', label: '黑夜' }
+      ],
       playbackRate: 1,
-      speedOptions: [0.5, 1, 1.5, 2]
+      speedOptions: [0.5, 1, 1.5, 2, 4, 8, 16]
     };
   },
   computed: {
@@ -88,6 +101,7 @@ export default {
       await this.fetchFilesForDir();
     },
     async onFileChange() {
+      this.pause();
       if (!this.selectedDir || !this.selectedFile) return;
       const res = await axios.get('/api/logs/file', {
         params: { dir: this.selectedDir, name: this.selectedFile }
@@ -388,6 +402,67 @@ export default {
       // 当前展示角 = 航向 + 地图旋转偏移量
       return (heading + mapRotation + 360) % 360;
     },
+    normalizeMetric(value) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : null;
+    },
+    getMetricValue(point, ...keys) {
+      for (const key of keys) {
+        const value = point[key];
+        if (value === null || value === undefined || value === '') continue;
+        const numeric = this.normalizeMetric(value);
+        if (numeric !== null) {
+          return numeric;
+        }
+      }
+      return null;
+    },
+    formatLegendValue(name, value) {
+      if (value === null || value === undefined || Number.isNaN(value)) return '-';
+      if (name === 'Loss Rate') return `${value.toFixed(1)}%`;
+      if (name === 'Ping') return `${value.toFixed(1)}ms`;
+      if (name === 'Dist') return `${value.toFixed(1)}m`;
+      if (name === 'Altitude') return `${value.toFixed(1)}m`;
+      if (name === 'Signal_dBm') return `${value.toFixed(1)}dBm`;
+      if (name === 'Jitter(ms)') return `${value.toFixed(1)}ms`;
+      return `${value}`;
+    },
+    getThemeColors() {
+      if (this.themeMode === 'night') {
+        return {
+          backgroundColor: '#020817',
+          panelColor: 'rgba(2, 8, 23, 0.96)',
+          dividerColor: 'rgba(148, 163, 184, 0.2)',
+          textColor: '#f8fafc',
+          axisColor: '#cbd5e1',
+          gridColor: 'rgba(148, 163, 184, 0.2)',
+          tooltipBg: 'rgba(3, 7, 18, 0.94)',
+          tooltipBorder: 'rgba(148, 163, 184, 0.2)',
+          lineLoss: '#fbbf24',
+          linePing: '#22c55e',
+          lineDist: '#38bdf8',
+          lineAltitude: '#fb7185',
+          lineSignal: '#a78bfa',
+          lineJitter: '#fde68a'
+        };
+      }
+      return {
+        backgroundColor: '#ffffff',
+        panelColor: '#ffffff',
+        dividerColor: '#e5e7eb',
+        textColor: '#1f2937',
+        axisColor: '#4b5563',
+        gridColor: '#e5e7eb',
+        tooltipBg: '#ffffff',
+        tooltipBorder: '#d1d5db',
+        lineLoss: '#f59e0b',
+        linePing: '#10b981',
+        lineDist: '#0ea5e9',
+        lineAltitude: '#f43f5e',
+        lineSignal: '#8b5cf6',
+        lineJitter: '#f59e0b'
+      };
+    },
     updatePosition(index) {
       if (!this.points[index] || !this.marker) return;
       const p = this.points[index];
@@ -407,7 +482,7 @@ export default {
     play() {
       if (this.isPlaying) return;
       this.isPlaying = true;
-      const interval = 200 / this.playbackRate;
+      const interval = Math.max(20, 200 / this.playbackRate);
       this.timer = setInterval(() => {
         if (this.currentIndex < this.points.length - 1) {
           this.currentIndex++;
@@ -425,59 +500,144 @@ export default {
     onSliderChange() {
       this.updatePosition(this.currentIndex);
     },
+    buildChartOption() {
+      const theme = this.getThemeColors();
+      const series = [];
+      const lossData = this.points.map(point => this.getMetricValue(point, 'Loss_Rate(%)', 'HB_Loss_Rate(%)'));
+      const pingData = this.points.map(point => this.getMetricValue(point, 'Avg_Ping(ms)'));
+      const distData = this.points.map(point => this.getMetricValue(point, 'Dist_to_Arm_Pt(m)'));
+      const altitudeData = this.points.map(point => this.getMetricValue(point, 'Altitude(m)'));
+      const signalData = this.points.map(point => this.getMetricValue(point, 'Signal_dBm'));
+      const jitterData = this.points.map(point => this.getMetricValue(point, 'Jitter(ms)'));
+
+      if (lossData.some(v => v !== null)) {
+        series.push({
+          name: 'Loss Rate',
+          type: 'line',
+          data: lossData,
+          lineStyle: { color: theme.lineLoss },
+          itemStyle: { color: theme.lineLoss }
+        });
+      }
+      if (pingData.some(v => v !== null)) {
+        series.push({
+          name: 'Ping',
+          type: 'line',
+          data: pingData,
+          lineStyle: { color: theme.linePing },
+          itemStyle: { color: theme.linePing }
+        });
+      }
+      if (distData.some(v => v !== null)) {
+        series.push({
+          name: 'Dist',
+          type: 'line',
+          data: distData,
+          lineStyle: { color: theme.lineDist },
+          itemStyle: { color: theme.lineDist }
+        });
+      }
+      if (altitudeData.some(v => v !== null)) {
+        series.push({
+          name: 'Altitude',
+          type: 'line',
+          data: altitudeData,
+          yAxisIndex: 1,
+          lineStyle: { color: theme.lineAltitude },
+          itemStyle: { color: theme.lineAltitude }
+        });
+      }
+      if (signalData.some(v => v !== null)) {
+        series.push({
+          name: 'Signal_dBm',
+          type: 'line',
+          data: signalData,
+          lineStyle: { color: theme.lineSignal },
+          itemStyle: { color: theme.lineSignal }
+        });
+      }
+      if (jitterData.some(v => v !== null)) {
+        series.push({
+          name: 'Jitter(ms)',
+          type: 'line',
+          data: jitterData,
+          lineStyle: { color: theme.lineJitter },
+          itemStyle: { color: theme.lineJitter }
+        });
+      }
+
+      this.legendValues = {};
+      series.forEach(item => {
+        this.legendValues[item.name] = '-';
+      });
+
+      return {
+        backgroundColor: theme.backgroundColor,
+        legend: {
+          data: series.map(item => item.name),
+          top: 0,
+          textStyle: { color: theme.textColor },
+          formatter: name => `${name}: ${this.legendValues[name] || '-'}`
+        },
+        tooltip: {
+          trigger: 'axis',
+          backgroundColor: theme.tooltipBg,
+          borderColor: theme.tooltipBorder,
+          textStyle: { color: theme.textColor },
+          formatter: params => {
+            if (!params || params.length === 0) return '';
+            const time = params[0].axisValue;
+            let text = `<b>${time}</b><br/>`;
+            params.forEach(param => {
+              const value = param.value === null || param.value === undefined ? '-' : param.value;
+              text += `${param.marker} ${param.seriesName}: ${value}<br/>`;
+            });
+            return text;
+          }
+        },
+        xAxis: {
+          type: 'category',
+          data: this.points.map(point => point.Timestamp),
+          axisLine: { lineStyle: { color: theme.axisColor } },
+          axisLabel: { color: theme.axisColor },
+          splitLine: { lineStyle: { color: theme.gridColor } }
+        },
+        yAxis: [
+          {
+            type: 'value',
+            name: '% / ms / dBm',
+            axisLine: { lineStyle: { color: theme.axisColor } },
+            axisLabel: { color: theme.axisColor },
+            splitLine: { lineStyle: { color: theme.gridColor } }
+          },
+          {
+            type: 'value',
+            name: 'Altitude (m)',
+            position: 'right',
+            axisLine: { lineStyle: { color: theme.axisColor } },
+            axisLabel: { color: theme.axisColor },
+            splitLine: { lineStyle: { color: theme.gridColor } }
+          }
+        ],
+        series,
+        axisPointer: {
+          show: true,
+          type: 'line',
+          lineStyle: { color: theme.axisColor, width: 1 },
+          snap: true
+        }
+      };
+    },
     initChart() {
       this.$nextTick(() => {
         if (!this.chart) {
           this.chart = echarts.init(this.$refs.chartContainer);
         }
-        const times = this.points.map(p => p.Timestamp);
-        const loss = this.points.map(p => p['Loss_Rate(%)'] || p['HB_Loss_Rate(%)'] || 0);
-        const ping = this.points.map(p => p['Avg_Ping(ms)']);
-        const dist = this.points.map(p => p['Dist_to_Arm_Pt(m)']);
-        const altitude = this.points.map(p => p['Altitude(m)']);
-        const names = ['Loss Rate', 'Ping', 'Dist', 'Altitude'];
-        const option = {
-          legend: {
-            data: names,
-            top: 0,
-            formatter: name => `${name}: ${this.legendValues[name]}`
-          },
-          tooltip: {
-            trigger: 'axis',
-            formatter: params => {
-              if (!params || params.length === 0) return '';
-              const time = params[0].axisValue;
-              let text = `<b>${time}</b><br/>`;
-              params.forEach(p => {
-                text += `${p.marker} ${p.seriesName}: ${p.data}<br/>`;
-              });
-              return text;
-            }
-          },
-          xAxis: { type: 'category', data: times },
-          yAxis: [
-            { type: 'value', name: '% / ms / m' },
-            { type: 'value', name: 'Altitude (m)', position: 'right' }
-          ],
-          series: [
-            { name: 'Loss Rate', type: 'line', data: loss },
-            { name: 'Ping', type: 'line', data: ping },
-            { name: 'Dist', type: 'line', data: dist },
-            { name: 'Altitude', type: 'line', data: altitude, yAxisIndex: 1 }
-          ],
-          axisPointer: {
-            show: true,
-            type: 'line',
-            lineStyle: { color: '#888', width: 1 },
-            snap: true
-          }
-        };
-        this.chart.setOption(option);
+        this.chart.setOption(this.buildChartOption(), true);
       });
     },
     updateChartPointer(idx) {
       if (!this.chart) return;
-      // move axis pointer and show tooltip at current index
       this.chart.dispatchAction({
         type: 'updateAxisPointer',
         xAxisIndex: 0,
@@ -489,15 +649,27 @@ export default {
         dataIndex: idx
       });
       const point = this.points[idx] || {};
-      this.legendValues['Loss Rate'] = (point['Loss_Rate(%)'] || point['HB_Loss_Rate(%)']) != null ? `${point['Loss_Rate(%)'] || point['HB_Loss_Rate(%)']}%` : '-';
-      this.legendValues['Ping'] = point['Avg_Ping(ms)'] != null ? `${point['Avg_Ping(ms)']}ms` : '-';
-      this.legendValues['Dist'] = point['Dist_to_Arm_Pt(m)'] != null ? `${point['Dist_to_Arm_Pt(m)']}m` : '-';
-      this.legendValues['Altitude'] = point['Altitude(m)'] != null ? `${point['Altitude(m)']}m` : '-';
+      const legendUpdates = {
+        'Loss Rate': this.getMetricValue(point, 'Loss_Rate(%)', 'HB_Loss_Rate(%)'),
+        Ping: this.getMetricValue(point, 'Avg_Ping(ms)'),
+        Dist: this.getMetricValue(point, 'Dist_to_Arm_Pt(m)'),
+        Altitude: this.getMetricValue(point, 'Altitude(m)'),
+        Signal_dBm: this.getMetricValue(point, 'Signal_dBm'),
+        'Jitter(ms)': this.getMetricValue(point, 'Jitter(ms)')
+      };
+      Object.entries(legendUpdates).forEach(([name, value]) => {
+        this.legendValues[name] = this.formatLegendValue(name, value);
+      });
       this.chart.setOption({
         legend: {
-          formatter: name => `${name}: ${this.legendValues[name]}`
+          formatter: name => `${name}: ${this.legendValues[name] || '-'}`
         }
       });
+    }
+  },
+  watch: {
+    themeMode() {
+      this.initChart();
     }
   },
   mounted() {
@@ -518,19 +690,39 @@ export default {
   flex-direction: column;
   height: 100vh;
   background: #f5f5f5;
+  color: #222;
+  transition: background 0.25s ease, color 0.25s ease;
+}
+.app-container.day {
+  background: #f5f5f5;
+  color: #222;
+}
+.app-container.night {
+  background: #020817;
+  color: #f8fafc;
 }
 .controls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: 10px;
+  padding: 10px 16px;
   background: #fff;
   border-bottom: 1px solid #ddd;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+.app-container.night .controls {
+  background: rgba(2, 8, 23, 0.96);
+  border-bottom-color: rgba(148, 163, 184, 0.2);
+}
+.control-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 h1 {
   text-align: center;
   margin: 12px 0;
-  color: #333;
+  color: inherit;
   font-size: 1.5em;
 }
 .controls select,
@@ -538,14 +730,28 @@ h1 {
 .controls input[type="range"] {
   font-size: 1em;
 }
+.app-container.night .controls select,
+.app-container.night .controls button {
+  background: rgba(8, 15, 33, 0.96);
+  color: #f8fafc;
+  border-color: rgba(148, 163, 184, 0.25);
+}
 .map {
   flex: 1;
   border: 1px solid #ccc;
 }
+.app-container.night .map {
+  border-color: rgba(148, 163, 184, 0.2);
+}
 .chart {
-  height: 200px;
+  height: 240px;
   border-top: 1px solid #ddd;
   background: #fff;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+.app-container.night .chart {
+  background: rgba(2, 8, 23, 0.96);
+  border-top-color: rgba(148, 163, 184, 0.2);
 }
 </style>
 
