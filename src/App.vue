@@ -26,7 +26,18 @@
       </label>
       <input type="range" min="0" :max="points.length-1" v-model.number="currentIndex" @input="onSliderChange" />
     </div>
-    <div class="map" ref="mapContainer"></div>
+    <div class="map-stage">
+      <div class="map" ref="mapContainer"></div>
+      <div class="realtime-info-panel" :class="themeMode" v-if="activePoint">
+        <div class="panel-title">实时信息</div>
+        <div class="info-grid">
+          <div v-for="row in realtimeRows" :key="row.label" class="info-row">
+            <span class="info-label">{{ row.label }}</span>
+            <span class="info-value">{{ row.value }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="chart" ref="chartContainer"></div>
   </div>
 </template>
@@ -57,6 +68,11 @@ export default {
       altitudeMarker: null,
       altitudeLabels: [],
       legendValues: {},
+      realtimeFields: [
+        'Timestamp', 'Latitude', 'Longitude', 'Altitude(m)', 'Speed(m/s)', 'Climb(m/s)', 'Heading(deg)',
+        'Loss_Rate(%)', 'Avg_Ping(ms)', 'Dist_to_Arm_Pt(m)', 'Flight_Dist(m)', 'WP_Speed(m/s)',
+        'WP_Radius(m)', 'WP_Accel(m/s2)', 'Network', 'Band', 'Signal_dBm', 'RSRP', 'RSRQ', 'SNR', 'RSSI', 'Jitter(ms)'
+      ],
       themeMode: 'day',
       themeOptions: [
         { value: 'day', label: '白天' },
@@ -69,6 +85,16 @@ export default {
   computed: {
     canPlay() {
       return this.points.length > 0 && !this.isPlaying;
+    },
+    activePoint() {
+      return this.points[this.currentIndex] || null;
+    },
+    realtimeRows() {
+      if (!this.activePoint) return [];
+      return this.realtimeFields.map(field => ({
+        label: field,
+        value: this.formatRealtimeValue(field, this.activePoint[field])
+      }));
     }
   },
   methods: {
@@ -427,6 +453,20 @@ export default {
       if (name === 'Jitter(ms)') return `${value.toFixed(1)}ms`;
       return `${value}`;
     },
+    formatRealtimeValue(field, value) {
+      if (value === null || value === undefined || value === '') return '-';
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) {
+        if (['Latitude', 'Longitude'].includes(field)) {
+          return numeric.toFixed(6);
+        }
+        if (['Network', 'Band'].includes(field)) {
+          return `${Math.round(numeric)}`;
+        }
+        return numeric.toFixed(1);
+      }
+      return String(value);
+    },
     getThemeColors() {
       if (this.themeMode === 'night') {
         return {
@@ -464,8 +504,11 @@ export default {
       };
     },
     updatePosition(index) {
-      if (!this.points[index] || !this.marker) return;
-      const p = this.points[index];
+      const safeIndex = Number(index);
+      if (!Number.isFinite(safeIndex)) return;
+      this.currentIndex = safeIndex;
+      if (!this.points[safeIndex] || !this.marker) return;
+      const p = this.points[safeIndex];
       const pos = [p.Longitude, p.Latitude, p['Altitude(m)']];
       this.marker.setPosition(pos);
       const heading = p['Heading(deg)'] != null ? p['Heading(deg)'] : 0;
@@ -476,8 +519,19 @@ export default {
         this.altitudeMarker.setPosition(pos);
         this.altitudeMarker.setContent(`<div class="alt-label">${(p['Altitude(m)'] || 0).toFixed(1)}m</div>`);
       }
-      // update chart pointer
-      this.updateChartPointer(index);
+      this.updateChartPointer(safeIndex);
+    },
+    handleChartClick(params) {
+      if (!params || !this.points.length) return;
+      const index = params.dataIndex;
+      if (!Number.isFinite(index)) return;
+      this.pause();
+      this.updatePosition(index);
+      this.chart.dispatchAction({
+        type: 'showTip',
+        seriesIndex: params.seriesIndex,
+        dataIndex: index
+      });
     },
     play() {
       if (this.isPlaying) return;
@@ -571,10 +625,22 @@ export default {
         this.legendValues[item.name] = '-';
       });
 
+      const visibleSeries = new Set(['Ping', 'Signal_dBm']);
+      const selected = {};
+      series.forEach(item => {
+        const shouldShow = visibleSeries.has(item.name);
+        if (!shouldShow && !series.some(seriesItem => visibleSeries.has(seriesItem.name))) {
+          selected[item.name] = true;
+        } else {
+          selected[item.name] = shouldShow;
+        }
+      });
+
       return {
         backgroundColor: theme.backgroundColor,
         legend: {
           data: series.map(item => item.name),
+          selected,
           top: 0,
           textStyle: { color: theme.textColor },
           formatter: name => `${name}: ${this.legendValues[name] || '-'}`
@@ -633,10 +699,12 @@ export default {
         if (!this.chart) {
           this.chart = echarts.init(this.$refs.chartContainer);
         }
+        this.chart.off('click', this.handleChartClick);
+        this.chart.on('click', this.handleChartClick);
         this.chart.setOption(this.buildChartOption(), true);
       });
     },
-    updateChartPointer(idx) {
+    updateChartPointer(idx, seriesIndex = 0) {
       if (!this.chart) return;
       this.chart.dispatchAction({
         type: 'updateAxisPointer',
@@ -645,7 +713,7 @@ export default {
       });
       this.chart.dispatchAction({
         type: 'showTip',
-        seriesIndex: 0,
+        seriesIndex,
         dataIndex: idx
       });
       const point = this.points[idx] || {};
@@ -736,12 +804,65 @@ h1 {
   color: #f8fafc;
   border-color: rgba(148, 163, 184, 0.25);
 }
-.map {
+.map-stage {
+  position: relative;
   flex: 1;
+  min-height: 0;
+}
+.map {
+  position: absolute;
+  inset: 0;
   border: 1px solid #ccc;
 }
 .app-container.night .map {
   border-color: rgba(148, 163, 184, 0.2);
+}
+.realtime-info-panel {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: min(360px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: rgba(255, 255, 255, 0.74);
+  backdrop-filter: blur(4px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+.app-container.night .realtime-info-panel {
+  background: rgba(2, 8, 23, 0.72);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+.panel-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.82;
+}
+.info-grid {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) 1fr;
+  gap: 4px 10px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.info-row {
+  display: contents;
+}
+.info-label {
+  font-weight: 700;
+  opacity: 0.8;
+}
+.info-value {
+  word-break: break-word;
 }
 .chart {
   height: 240px;

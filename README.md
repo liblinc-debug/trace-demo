@@ -54,4 +54,8 @@ trace-demo/
 1. 增加新指标：Signal_dBm、Jitter(ms)数据在 坐标系中的展示，并且注意对原数据结构的兼容，即没有相应指标数据时不展示该指标的图表；
 2. 播放速度增加：4X、8X、16X 速度的选项，选择对应速度后，根据倍数进行动画的播放数据；
 3. 整体界面风格增加白天与黑夜两种风格，根据选择的风格对界面进行不同风格的设置；
-4. 其他功能保持原功能状态；
+4. 图表上默认展示Ping值与 Signal 两个指标，其他指标点击后再展示；
+5. 在图表上点击时，地图上的动画展示的时间点保持与在图表上点击的时间点一至，方便查看某个指标数据异常时，观察无人机此时所在的位置；
+6. 显示一个半透明浮动层展示无人机的实时信息：包括以下指标：Timestamp	Latitude	Longitude	Altitude(m)	Speed(m/s)	Climb(m/s)	Heading(deg)	Loss_Rate(%)	Avg_Ping(ms)	Dist_to_Arm_Pt(m)	Flight_Dist(m)	WP_Speed(m/s)	WP_Radius(m)	WP_Accel(m/s2)	Network	Band	Signal_dBm	RSRP	RSRQ	SNR	RSSI	Jitter(ms)，要求排列整齐，展示在右上角，不要太大的图层
+7. 其他功能保持原功能状态；
+
