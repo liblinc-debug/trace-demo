@@ -134,34 +134,34 @@ export default {
         Signal_dBm: `
           <p><strong>Signal_dBm</strong> 信号强度评估：</p>
           <ul>
-            <li><span class="good">优良 ≥ -85 dBm</span>：绿色表示信号很强，速率稳定，适用于无人机控制与高清视频回传。</li>
-            <li><span class="normal">一般 -95 ～ -86 dBm</span>：黄绿色表示信号较好，基本满足业务需求，边缘可能出现波动。</li>
-            <li><span class="poor">较差 -105 ～ -96 dBm</span>：黄色表示信号较弱，可能影响速率和时延，需关注。</li>
-            <li><span class="bad">很差 ≤ -106 dBm</span>：红色表示信号极弱，容易掉线或丢包，不适合高可靠应用。</li>
+            <li><span class="good"><font color="green">优良 ≥ -85 dBm</font></span>：绿色表示信号很强，速率稳定，适用于无人机控制与高清视频回传。</li>
+            <li><span class="normal"><font color="orange">一般 -95 ～ -86 dBm</font></span>：黄绿色表示信号较好，基本满足业务需求，边缘可能出现波动。</li>
+            <li><span class="poor"><font color="yellow">较差 -105 ～ -96 dBm</font></span>：黄色表示信号较弱，可能影响速率和时延，需关注。</li>
+            <li><span class="bad"><font color="red">很差 ≤ -106 dBm</font></span>：红色表示信号极弱，容易掉线或丢包，不适合高可靠应用。</li>
           </ul>`,
         'Avg_Ping(ms)': `
           <p><strong>Avg_Ping(ms)</strong> 时延评估：</p>
           <ul>
-            <li><span class="good">优良 ≤ 30 ms</span>：绿色表示时延很低，适合远程控制、高清视频、实时图传。</li>
-            <li><span class="normal">一般 31 ～ 60 ms</span>：黄绿色表示满足普通业务，控制与图传基本可用。</li>
-            <li><span class="poor">较差 61 ～ 100 ms</span>：黄色表示时延偏高，可能出现操控感下降或轻微卡顿。</li>
-            <li><span class="bad">很差 > 100 ms</span>：红色表示时延较高，影响安全飞行和实时交互。</li>
+            <li><span class="good"><font color="green">优良 ≤ 30 ms</font></span>：绿色表示时延很低，适合远程控制、高清视频、实时图传。</li>
+            <li><span class="normal"><font color="orange">一般 31 ～ 60 ms</font></span>：黄绿色表示满足普通业务，控制与图传基本可用。</li>
+            <li><span class="poor"><font color="yellow">较差 61 ～ 100 ms</font></span>：黄色表示时延偏高，可能出现操控感下降或轻微卡顿。</li>
+            <li><span class="bad"><font color="red">很差 > 100 ms</font></span>：红色表示时延较高，影响安全飞行和实时交互。</li>
           </ul>`,
         'Jitter(ms)': `
           <p><strong>Jitter(ms)</strong> 波动评估：</p>
           <ul>
-            <li><span class="good">优良 ≤ 10 ms</span>：绿色表示时延非常稳定，控制指令流畅，视频无卡顿。</li>
-            <li><span class="normal">一般 11 ～ 20 ms</span>：黄绿色表示轻微波动，基本不影响业务。</li>
-            <li><span class="poor">较差 21 ～ 50 ms</span>：黄色表示较明显抖动，可能影响操控体验或视频流畅度。</li>
-            <li><span class="bad">很差 > 50 ms</span>：红色表示抖动严重，容易导致控制指令丢帧或视频花屏。</li>
+            <li><span class="good"><font color="green">优良 ≤ 10 ms</font></span>：绿色表示时延非常稳定，控制指令流畅，视频无卡顿。</li>
+            <li><span class="normal"><font color="orange">一般 11 ～ 20 ms</font></span>：黄绿色表示轻微波动，基本不影响业务。</li>
+            <li><span class="poor"><font color="yellow">较差 21 ～ 50 ms</font></span>：黄色表示较明显抖动，可能影响操控体验或视频流畅度。</li>
+            <li><span class="bad"><font color="red">很差 > 50 ms</font></span>：红色表示抖动严重，容易导致控制指令丢帧或视频花屏。</li>
           </ul>`,
         'Loss_Rate(%)': `
           <p><strong>Loss_Rate(%)</strong> 丢包率评估：</p>
           <ul>
-            <li><span class="good">优良 ≤ 1%</span>：绿色表示链路稳定，数据传输可靠。</li>
-            <li><span class="normal">一般 1 ～ 3%</span>：黄绿色表示存在少量丢包，通常可接受。</li>
-            <li><span class="poor">较差 3 ～ 8%</span>：黄色表示丢包显著，可能影响控制与图传。</li>
-            <li><span class="bad">很差 > 8%</span>：红色表示丢包率高，需重点关注网络与链路质量。</li>
+            <li><span class="good"><font color="green">优良 ≤ 1%</font></span>：绿色表示链路稳定，数据传输可靠。</li>
+            <li><span class="normal"><font color="orange">一般 1 ～ 3%</font></span>：黄绿色表示存在少量丢包，通常可接受。</li>
+            <li><span class="poor"><font color="yellow">较差 3 ～ 8%</font></span>：黄色表示丢包显著，可能影响控制与图传。</li>
+            <li><span class="bad"><font color="red">很差 > 8%</font></span>：红色表示丢包率高，需重点关注网络与链路质量。</li>
           </ul>`
       };
       return meta[this.selectedMetric] || '<p>请选择一个指标以查看对应说明。</p>';
