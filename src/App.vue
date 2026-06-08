@@ -554,11 +554,15 @@ export default {
         this.segmentLines = [];
       }
       if (this.locaLineLayer) {
-        this.locaLineLayer.clear();
-        this.locaLineLayer.setMap(null);
+        if (typeof this.locaLineLayer.setMap === 'function') {
+          this.locaLineLayer.setMap(null);
+        }
+        if (typeof this.locaLineLayer.clear === 'function') {
+          this.locaLineLayer.clear();
+        }
         this.locaLineLayer = null;
       }
-      if (this.locaContainer) {
+      if (this.locaContainer && typeof this.locaContainer.clear === 'function') {
         this.locaContainer.clear();
       }
     },
