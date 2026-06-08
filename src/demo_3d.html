@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高德地图 · 真3D轨迹 (错误修复版)</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Microsoft YaHei', sans-serif;
+            background: #0b1a2a;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .info-bar {
+            background: rgba(10, 25, 40, 0.95);
+            backdrop-filter: blur(8px);
+            color: #b0e0ff;
+            padding: 10px 24px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 28px;
+            font-size: 14px;
+            border-bottom: 1px solid #2a4b6e;
+            z-index: 10;
+            align-items: center;
+        }
+        .badge {
+            background: #1e3f5f;
+            padding: 4px 14px;
+            border-radius: 40px;
+            border-left: 4px solid #4db8ff;
+        }
+        #container {
+            flex: 1;
+            width: 100%;
+            background: #07111e;
+        }
+        .legend-corner {
+            position: absolute;
+            bottom: 30px;
+            right: 20px;
+            background: rgba(16, 28, 40, 0.9);
+            backdrop-filter: blur(8px);
+            border-radius: 16px;
+            padding: 18px 22px;
+            color: #ddd;
+            font-size: 13px;
+            border: 1px solid #36648b;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.7);
+            z-index: 150;
+            max-width: 270px;
+            border-left: 5px solid #ffaa33;
+        }
+        .legend-corner h4 {
+            color: #ffaa33;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .line-3d-glow {
+            height: 4px;
+            width: 30px;
+            background: #ffaa33;
+            border-radius: 4px;
+            box-shadow: 0 0 15px #ffaa33;
+        }
+        .stats {
+            margin-top: 15px;
+            border-top: 1px solid #2a4b6e;
+            padding-top: 12px;
+            font-size: 12px;
+            color: #9bbad0;
+        }
+        .key-hint {
+            position: absolute;
+            top: 70px;
+            left: 20px;
+            background: rgba(0,0,0,0.6);
+            color: #ffbb33;
+            padding: 5px 15px;
+            border-radius: 40px;
+            font-size: 13px;
+            border: 1px solid #ffaa33;
+            z-index: 200;
+            backdrop-filter: blur(4px);
+        }
+    </style>
+    <!-- 加载高德地图 2.0 核心 + Loca 可视化库 -->
+    <script src="https://webapi.amap.com/maps?v=2.0&key=18cde1b6f1a781795c9caea1fd9e8db4&plugin=AMap.MoveAnimation"></script>
+    <script src="https://webapi.amap.com/loca?v=2.0.0&key=18cde1b6f1a781795c9caea1fd9e8db4"></script>
+</head>
+<body>
+<div class="info-bar">
+    <div class="badge">📅 完整飞行日志 · 2026-03-11 (修复版)</div>
+    <div>📍 数据点: <span id="point-count">0</span></div>
+    <div>🗼 最高海拔: <span id="max-alt">0.0</span> m</div>
+    <div>📉 最低: <span id="min-alt">0.0</span> m</div>
+    <div>📐 模式: <span style="color:#ffaa33;">Loca 3D 线 (固定色)</span></div>
+</div>
+<div id="container"></div>
+<div class="legend-corner">
+    <h4>⚡ 修复后的3D轨迹</h4>
+    <div class="legend-item"><span class="line-3d-glow"></span> 轨迹线 (海拔真实感)</div>
+    <div class="legend-item"><span style="background:#2ecc71; width:16px;height:16px;border-radius:4px;"></span> 起飞点 (0m)</div>
+    <div class="legend-item"><span style="background:#ff4d4d; width:16px;height:16px;border-radius:4px;"></span> 最高点 (30.4m)</div>
+    <div class="legend-item"><span style="background:#3b9eff; width:16px;height:16px;border-radius:4px;"></span> 远端机动区</div>
+    <div class="stats">
+        <p>✅ 错误原因：渐变函数返回值异常</p>
+        <p>✅ 修复：固定颜色 + 明确高度函数</p>
+        <p style="color:#ffaa33;">⛰️ 请旋转视角观察海拔起伏</p>
+    </div>
+</div>
+<div class="key-hint" id="key-warning">🔑 使用公开测试Key (如失效请替换为开发者Key)</div>
+
+<script>
+(function() {
+    // ----- 完整日志数据 (87个点) -----
+    const fullCSV = `Timestamp,Latitude,Longitude,Altitude(m),Speed(m/s),Heading(deg),Loss_Rate(%),Avg_Ping(ms),Dist_to_Arm_Pt(m)
+2026-03-11 17:18:53,22.6613546,114.5003555,0.0,0.0,245.1,0.0,35.6,0.0
+2026-03-11 17:18:54,22.6613546,114.5003555,-0.0,0.0,245.2,0.0,35.6,0.0
+2026-03-11 17:18:55,22.6613546,114.5003555,-0.0,0.0,245.4,0.0,30.0,0.0
+2026-03-11 17:18:56,22.6613549,114.5003556,0.3,0.1,245.8,0.0,35.4,0.0
+2026-03-11 17:18:57,22.6613547,114.5003562,1.6,0.0,295.4,0.0,36.6,0.1
+2026-03-11 17:18:58,22.6613546,114.5003563,3.8,0.1,295.2,0.0,32.0,0.1
+2026-03-11 17:18:59,22.6613548,114.5003566,6.3,0.1,292.5,0.0,31.4,0.1
+2026-03-11 17:19:00,22.6613550,114.5003563,8.8,0.1,293.2,0.0,30.4,0.1
+2026-03-11 17:19:01,22.6613553,114.5003559,11.3,0.1,294.3,0.0,34.4,0.1
+2026-03-11 17:19:02,22.6613553,114.5003550,13.7,0.1,293.2,0.0,35.8,0.1
+2026-03-11 17:19:03,22.6613550,114.5003547,16.2,0.0,293.3,0.0,37.0,0.1
+2026-03-11 17:19:04,22.6613551,114.5003547,18.7,0.0,293.8,0.0,45.0,0.1
+2026-03-11 17:19:05,22.6613552,114.5003542,21.3,0.1,293.9,0.0,49.4,0.1
+2026-03-11 17:19:06,22.6613551,114.5003536,23.7,0.0,294.1,0.0,39.2,0.2
+2026-03-11 17:19:07,22.6613551,114.5003535,26.0,0.1,294.2,0.0,35.4,0.2
+2026-03-11 17:19:08,22.6613552,114.5003544,27.8,0.1,294.8,0.0,34.0,0.1
+2026-03-11 17:19:09,22.6613550,114.5003552,29.1,0.1,293.9,0.0,29.0,0.1
+2026-03-11 17:19:10,22.6613550,114.5003554,29.8,0.0,294.2,0.0,25.2,0.0
+2026-03-11 17:19:11,22.6613551,114.5003555,30.0,0.1,293.7,0.0,30.2,0.1
+2026-03-11 17:19:12,22.6613525,114.5003596,30.2,1.1,256.8,0.0,30.2,0.5
+2026-03-11 17:19:13,22.6613442,114.5003747,30.4,2.4,194.2,0.0,37.8,2.3
+2026-03-11 17:19:14,22.6613358,114.5003990,30.2,2.5,130.5,0.0,42.2,4.9
+2026-03-11 17:19:15,22.6613270,114.5004231,30.0,2.5,114.4,0.0,39.2,7.6
+2026-03-11 17:19:16,22.6613151,114.5004447,30.0,2.6,119.3,0.0,44.4,10.2
+2026-03-11 17:19:17,22.6613015,114.5004652,30.0,2.7,119.1,0.0,40.0,12.7
+2026-03-11 17:19:18,22.6612879,114.5004876,30.1,2.8,118.8,0.0,34.0,15.5
+2026-03-11 17:19:19,22.6612752,114.5005109,30.0,2.8,119.3,0.0,36.4,18.2
+2026-03-11 17:19:20,22.6612630,114.5005344,29.9,2.8,119.3,0.0,34.8,21.0
+2026-03-11 17:19:21,22.6612508,114.5005581,29.9,2.8,120.6,0.0,29.6,23.8
+2026-03-11 17:19:22,22.6612383,114.5005813,29.8,2.7,120.2,0.0,33.4,26.6
+2026-03-11 17:19:23,22.6612258,114.5006043,29.8,2.7,120.7,0.0,34.8,29.3
+2026-03-11 17:19:24,22.6612136,114.5006274,29.8,2.7,120.2,0.0,27.0,32.0
+2026-03-11 17:19:25,22.6612009,114.5006520,29.9,2.7,120.3,0.0,32.2,34.9
+2026-03-11 17:19:26,22.6611897,114.5006736,30.0,2.5,120.4,0.0,34.0,37.5
+2026-03-11 17:19:27,22.6611812,114.5006903,30.0,1.3,120.7,0.0,34.0,39.4
+2026-03-11 17:19:28,22.6611783,114.5006958,30.1,0.2,119.4,0.0,35.8,40.1
+2026-03-11 17:19:29,22.6611778,114.5006962,30.1,0.0,119.8,0.0,39.2,40.2
+2026-03-11 17:19:30,22.6611785,114.5006946,30.1,0.5,126.6,0.0,46.2,40.0
+2026-03-11 17:19:31,22.6611831,114.5006868,30.0,1.5,193.3,0.0,43.4,39.0
+2026-03-11 17:19:32,22.6611934,114.5006688,30.0,2.9,253.7,0.0,42.8,36.8
+2026-03-11 17:19:33,22.6612080,114.5006388,30.1,4.1,303.1,0.0,36.8,33.4
+2026-03-11 17:19:34,22.6612269,114.5006007,30.1,4.6,298.9,0.0,33.6,28.9
+2026-03-11 17:19:35,22.6612475,114.5005614,30.2,4.7,297.5,0.0,31.6,24.3
+2026-03-11 17:19:36,22.6612689,114.5005212,30.2,4.9,297.1,0.0,30.0,19.5
+2026-03-11 17:19:37,22.6612912,114.5004801,30.2,5.0,297.8,0.0,33.4,14.6
+2026-03-11 17:19:38,22.6613140,114.5004383,30.2,4.9,297.6,0.0,39.6,9.6
+2026-03-11 17:19:39,22.6613352,114.5003991,30.2,4.2,299.0,0.0,37.6,5.0
+2026-03-11 17:19:40,22.6613505,114.5003706,30.3,2.5,300.7,0.0,36.6,1.6
+2026-03-11 17:19:41,22.6613574,114.5003578,30.3,0.9,299.8,0.0,40.2,0.4
+2026-03-11 17:19:42,22.6613590,114.5003550,30.1,0.2,300.5,0.0,33.8,0.5
+2026-03-11 17:19:43,22.6613588,114.5003545,29.9,0.1,300.1,0.0,28.6,0.5
+2026-03-11 17:19:44,22.6613584,114.5003545,28.7,0.1,299.8,0.0,28.6,0.4
+2026-03-11 17:19:45,22.6613580,114.5003548,27.3,0.1,301.4,0.0,33.8,0.4
+2026-03-11 17:19:46,22.6613577,114.5003563,25.8,0.1,303.2,0.0,36.8,0.4
+2026-03-11 17:19:47,22.6613575,114.5003579,24.2,0.0,313.4,0.0,37.4,0.4
+2026-03-11 17:19:48,22.6613577,114.5003571,22.6,0.1,323.1,0.0,40.4,0.4
+2026-03-11 17:19:49,22.6613576,114.5003569,21.2,0.1,306.3,0.0,43.2,0.4
+2026-03-11 17:19:50,22.6613573,114.5003573,19.8,0.1,317.0,0.0,36.2,0.4
+2026-03-11 17:19:51,22.6613578,114.5003558,18.3,0.1,311.5,0.0,32.8,0.4
+2026-03-11 17:19:52,22.6613576,114.5003566,16.9,0.2,302.6,0.0,29.2,0.4
+2026-03-11 17:19:53,22.6613566,114.5003579,15.5,0.2,296.2,0.0,29.4,0.3
+2026-03-11 17:19:54,22.6613557,114.5003588,14.0,0.1,286.1,0.0,30.6,0.4
+2026-03-11 17:19:55,22.6613567,114.5003583,12.5,0.3,292.9,0.0,30.4,0.4
+2026-03-11 17:19:56,22.6613583,114.5003563,11.0,0.3,294.0,0.0,27.2,0.4
+2026-03-11 17:19:57,22.6613583,114.5003547,10.1,0.1,299.2,0.0,29.8,0.4
+2026-03-11 17:19:58,22.6613574,114.5003547,9.6,0.1,297.2,0.0,28.2,0.3
+2026-03-11 17:19:59,22.6613569,114.5003558,9.1,0.1,298.5,0.0,32.4,0.3
+2026-03-11 17:20:00,22.6613571,114.5003561,8.5,0.1,296.9,0.0,35.2,0.3
+2026-03-11 17:20:01,22.6613573,114.5003561,8.0,0.1,298.9,0.0,38.0,0.3
+2026-03-11 17:20:02,22.6613574,114.5003564,7.5,0.0,297.9,0.0,38.0,0.3
+2026-03-11 17:20:03,22.6613570,114.5003566,7.0,0.0,298.7,0.0,39.6,0.3
+2026-03-11 17:20:04,22.6613569,114.5003566,6.5,0.1,297.2,0.0,39.0,0.3
+2026-03-11 17:20:05,22.6613570,114.5003563,6.0,0.1,298.6,0.0,31.4,0.3
+2026-03-11 17:20:06,22.6613577,114.5003553,5.5,0.2,297.4,0.0,31.2,0.3
+2026-03-11 17:20:07,22.6613576,114.5003553,5.0,0.1,300.6,0.0,28.4,0.3
+2026-03-11 17:20:08,22.6613571,114.5003560,4.5,0.1,295.2,0.0,24.6,0.3
+2026-03-11 17:20:09,22.6613566,114.5003566,4.0,0.0,297.7,0.0,26.0,0.2
+2026-03-11 17:20:10,22.6613567,114.5003568,3.6,0.1,295.6,0.0,29.8,0.3
+2026-03-11 17:20:11,22.6613568,114.5003569,3.1,0.0,296.5,0.0,34.8,0.3
+2026-03-11 17:20:12,22.6613569,114.5003569,2.7,0.1,296.6,0.0,41.0,0.3
+2026-03-11 17:20:13,22.6613568,114.5003566,2.2,0.1,297.9,0.0,37.8,0.3
+2026-03-11 17:20:14,22.6613567,114.5003561,1.7,0.1,301.6,0.0,40.0,0.2
+2026-03-11 17:20:15,22.6613570,114.5003559,1.2,0.1,302.7,0.0,39.6,0.3
+2026-03-11 17:20:16,22.6613568,114.5003557,0.7,0.0,297.9,0.0,37.8,0.2
+2026-03-11 17:20:17,22.6613564,114.5003557,0.2,0.1,297.9,0.0,34.8,0.2
+2026-03-11 17:20:18,22.6613562,114.5003556,-0.1,0.1,297.0,0.0,34.8,0.2
+2026-03-11 17:20:19,22.6613559,114.5003556,-0.2,0.0,296.2,0.0,34.6,0.1`;
+
+    // 解析 CSV
+    const lines = fullCSV.trim().split('\n');
+    const points = [];
+    for (let i = 1; i < lines.length; i++) {
+        const vals = lines[i].split(',');
+        if (vals.length < 5) continue;
+        const lat = parseFloat(vals[1]);
+        const lng = parseFloat(vals[2]);
+        const alt = parseFloat(vals[3]);
+        if (!isNaN(lat) && !isNaN(lng) && !isNaN(alt)) {
+            points.push({ lat, lng, alt });
+        }
+    }
+    document.getElementById('point-count').innerText = points.length;
+    const alts = points.map(p => p.alt);
+    const maxAlt = Math.max(...alts).toFixed(1);
+    const minAlt = Math.min(...alts).toFixed(1);
+    document.getElementById('max-alt').innerText = maxAlt;
+    document.getElementById('min-alt').innerText = minAlt;
+
+    // 1. 初始化地图 (强制3D)
+    const map = new AMap.Map('container', {
+        zoom: 18,
+        center: [points[0].lng, points[0].lat],
+        viewMode: '3D',
+        pitch: 70,
+        rotation: -20,
+        mapStyle: 'amap://styles/blue',
+        showBuildingBlock: true,
+        buildingAnimation: true,
+        layers: [new AMap.TileLayer.Satellite()]
+    });
+
+    // 2. 初始化 Loca 容器
+    const loca = new Loca.Container({
+        map: map
+    });
+
+    // 3. 构建三维坐标数据 [lng, lat, alt] —— 确保每个子数组都是三个数字
+    const coordinates3D = points.map(p => [p.lng, p.lat, p.alt]);
+
+    // 4. 创建 GeoJSON 数据源
+    const geoSource = new Loca.GeoJSONSource({
+        data: {
+            type: 'FeatureCollection',
+            features: [
+                {
+                    type: 'Feature',
+                    properties: {},
+                    geometry: {
+                        type: 'LineString',
+                        coordinates: coordinates3D
+                    }
+                }
+            ]
+        }
+    });
+
+    // 5. 创建 LineLayer 并配置样式 (使用固定颜色，避免渐变函数可能导致的错误)
+    const lineLayer = new Loca.LineLayer({
+        zIndex: 30,
+        opacity: 1,
+        visible: true,
+        blendMode: 'normal'
+    });
+
+    // 设置数据源和样式
+    lineLayer.setSource(geoSource, {
+        lineWidth: 6.0,                       // 线宽
+        height: function(index, feature) {    // 关键：明确返回每个顶点的高度（米）
+            return feature.geometry.coordinates[index][2];
+        },
+        color: '#ffaa33',                      // 固定橙色，确保先显示线条
+        // 如果需要渐变，后续可以再调试，先保证线条出现
+    });
+
+    // 6. 将图层添加到 Loca 容器并渲染
+    loca.add(lineLayer);
+    loca.animate.start();
+
+    // 7. 添加标记 (起点、最高点、远端)
+    const start = points[0];
+    const maxPoint = points.reduce((a, b) => a.alt > b.alt ? a : b);
+    const farPoint = points[28] || points[25]; // 远端
+
+    new AMap.Marker({
+        position: [start.lng, start.lat, 0],
+        content: '<div style="background:#2ecc71; width:26px; height:26px; border-radius:6px; border:3px solid white; box-shadow:0 0 20px #2ecc71; text-align:center; line-height:26px;">🚁</div>',
+        offset: new AMap.Pixel(-13, -13)
+    }).setMap(map);
+
+    new AMap.Marker({
+        position: [maxPoint.lng, maxPoint.lat, maxPoint.alt],
+        content: '<div style="background:#e74c3c; width:26px; height:26px; border-radius:50%; border:3px solid white; box-shadow:0 0 20px red; text-align:center; line-height:26px;">▲</div>',
+        offset: new AMap.Pixel(-13, -13)
+    }).setMap(map);
+
+    new AMap.Marker({
+        position: [farPoint.lng, farPoint.lat, farPoint.alt],
+        content: '<div style="background:#3b9eff; width:24px; height:24px; border-radius:4px; border:2px solid white; box-shadow:0 0 20px #3b9eff; text-align:center; line-height:24px;">⛳</div>',
+        offset: new AMap.Pixel(-12, -12)
+    }).setMap(map);
+
+    // 自适应视野
+    const bounds = new AMap.Bounds();
+    points.forEach(p => bounds.extend(new AMap.LngLat(p.lng, p.lat)));
+    map.setBounds(bounds);
+    setTimeout(() => map.setPitch(70), 500);
+})();
+</script>
+</body>
+</html>
