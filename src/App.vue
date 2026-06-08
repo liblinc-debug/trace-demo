@@ -10,6 +10,12 @@
         <option value="" disabled>请选择飞行记录...</option>
         <option v-for="f in files" :key="f" :value="f">{{ f }}</option>
       </select>
+      <label class="control-label metric-select">
+        <span>指标：</span>
+        <select v-model="selectedMetric">
+          <option v-for="option in metricOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+        </select>
+      </label>
       <button @click="play" :disabled="!canPlay">播放</button>
       <button @click="pause" :disabled="!isPlaying">暂停</button>
       <label class="control-label">
@@ -28,12 +34,28 @@
     </div>
     <div class="map-stage">
       <div class="map" ref="mapContainer"></div>
-      <div class="realtime-info-panel" :class="themeMode" v-if="activePoint">
-        <div class="panel-title">实时信息</div>
-        <div class="info-grid">
-          <div v-for="row in realtimeRows" :key="row.label" class="info-row">
-            <span class="info-label">{{ row.label }}</span>
-            <span class="info-value">{{ row.value }}</span>
+      <div class="right-panel-group">
+        <div class="panel realtime-info-panel" :class="themeMode" v-if="activePoint">
+          <div class="panel-header">
+            <div>实时信息</div>
+            <button type="button" @click="realtimeInfoCollapsed = !realtimeInfoCollapsed">{{ realtimeInfoCollapsed ? '展开' : '收起' }}</button>
+          </div>
+          <div class="panel-body" v-show="!realtimeInfoCollapsed">
+            <div class="info-grid">
+              <div v-for="row in realtimeRows" :key="row.label" class="info-row">
+                <span class="info-label">{{ row.label }}</span>
+                <span class="info-value">{{ row.value }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel metric-info-panel" :class="themeMode" v-if="activePoint">
+          <div class="panel-header">
+            <div>{{ selectedMetric }} 说明</div>
+            <button type="button" @click="metricInfoCollapsed = !metricInfoCollapsed">{{ metricInfoCollapsed ? '展开' : '收起' }}</button>
+          </div>
+          <div class="panel-body" v-show="!metricInfoCollapsed">
+            <div class="metric-description" v-html="metricDescriptionHtml"></div>
           </div>
         </div>
       </div>
@@ -78,8 +100,19 @@ export default {
         { value: 'day', label: '白天' },
         { value: 'night', label: '黑夜' }
       ],
+      selectedMetric: 'Signal_dBm',
+      metricOptions: [
+        { value: 'Signal_dBm', label: 'Signal_dBm' },
+        { value: 'Avg_Ping(ms)', label: 'Avg_Ping(ms)' },
+        { value: 'Loss_Rate(%)', label: 'Loss_Rate(%)' },
+        { value: 'Jitter(ms)', label: 'Jitter(ms)' }
+      ],
+      metricInfoCollapsed: false,
+      realtimeInfoCollapsed: false,
       playbackRate: 1,
-      speedOptions: [0.5, 1, 1.5, 2, 4, 8, 16]
+      speedOptions: [0.5, 1, 1.5, 2, 4, 8, 16],
+      segmentLines: [],
+      pointsConverted: false
     };
   },
   computed: {
@@ -95,6 +128,43 @@ export default {
         label: field,
         value: this.formatRealtimeValue(field, this.activePoint[field])
       }));
+    },
+    metricDescriptionHtml() {
+      const meta = {
+        Signal_dBm: `
+          <p><strong>Signal_dBm</strong> 信号强度评估：</p>
+          <ul>
+            <li><span class="good">优良 ≥ -85 dBm</span>：绿色表示信号很强，速率稳定，适用于无人机控制与高清视频回传。</li>
+            <li><span class="normal">一般 -95 ～ -86 dBm</span>：黄绿色表示信号较好，基本满足业务需求，边缘可能出现波动。</li>
+            <li><span class="poor">较差 -105 ～ -96 dBm</span>：黄色表示信号较弱，可能影响速率和时延，需关注。</li>
+            <li><span class="bad">很差 ≤ -106 dBm</span>：红色表示信号极弱，容易掉线或丢包，不适合高可靠应用。</li>
+          </ul>`,
+        'Avg_Ping(ms)': `
+          <p><strong>Avg_Ping(ms)</strong> 时延评估：</p>
+          <ul>
+            <li><span class="good">优良 ≤ 30 ms</span>：绿色表示时延很低，适合远程控制、高清视频、实时图传。</li>
+            <li><span class="normal">一般 31 ～ 60 ms</span>：黄绿色表示满足普通业务，控制与图传基本可用。</li>
+            <li><span class="poor">较差 61 ～ 100 ms</span>：黄色表示时延偏高，可能出现操控感下降或轻微卡顿。</li>
+            <li><span class="bad">很差 > 100 ms</span>：红色表示时延较高，影响安全飞行和实时交互。</li>
+          </ul>`,
+        'Jitter(ms)': `
+          <p><strong>Jitter(ms)</strong> 波动评估：</p>
+          <ul>
+            <li><span class="good">优良 ≤ 10 ms</span>：绿色表示时延非常稳定，控制指令流畅，视频无卡顿。</li>
+            <li><span class="normal">一般 11 ～ 20 ms</span>：黄绿色表示轻微波动，基本不影响业务。</li>
+            <li><span class="poor">较差 21 ～ 50 ms</span>：黄色表示较明显抖动，可能影响操控体验或视频流畅度。</li>
+            <li><span class="bad">很差 > 50 ms</span>：红色表示抖动严重，容易导致控制指令丢帧或视频花屏。</li>
+          </ul>`,
+        'Loss_Rate(%)': `
+          <p><strong>Loss_Rate(%)</strong> 丢包率评估：</p>
+          <ul>
+            <li><span class="good">优良 ≤ 1%</span>：绿色表示链路稳定，数据传输可靠。</li>
+            <li><span class="normal">一般 1 ～ 3%</span>：黄绿色表示存在少量丢包，通常可接受。</li>
+            <li><span class="poor">较差 3 ～ 8%</span>：黄色表示丢包显著，可能影响控制与图传。</li>
+            <li><span class="bad">很差 > 8%</span>：红色表示丢包率高，需重点关注网络与链路质量。</li>
+          </ul>`
+      };
+      return meta[this.selectedMetric] || '<p>请选择一个指标以查看对应说明。</p>';
     }
   },
   methods: {
@@ -143,6 +213,7 @@ export default {
         p.Longitude >= -180 && p.Longitude <= 180 &&
         p['Altitude(m)'] >= 0
       );
+      this.pointsConverted = false;
       this.currentIndex = 0;
       if (this.points.length > 0) {
         try {
@@ -200,17 +271,19 @@ export default {
       }
 
       // 转换为高德 GCJ02 坐标
-      const convertedPoints = this.points.map(p => {
-        const [lat, lon] = this.wgs84ToGcj02(p.Latitude, p.Longitude);
-        return {
-          ...p,
-          Latitude: lat,
-          Longitude: lon
-        };
-      });
-      this.points = convertedPoints;
-      
-      // 创建路径
+      if (!this.pointsConverted) {
+        const convertedPoints = this.points.map(p => {
+          const [lat, lon] = this.wgs84ToGcj02(p.Latitude, p.Longitude);
+          return {
+            ...p,
+            Latitude: lat,
+            Longitude: lon
+          };
+        });
+        this.points = convertedPoints;
+        this.pointsConverted = true;
+      }
+
       const path = this.points.map(p => [p.Longitude, p.Latitude]);
       if (!this.map) {
         this.map = new AMap.Map(this.$refs.mapContainer, {
@@ -221,11 +294,9 @@ export default {
           rotation: 0,
           layers: [new AMap.TileLayer.Satellite()]
         });
-        // 增加视角导航与缩放控件
         this.map.addControl(new AMap.ControlBar({ position: 'RB' }));
         this.map.addControl(new AMap.Scale());
       } else {
-        // 如果已有地图，确保设置卫星图层
         const layers = this.map.getLayers ? this.map.getLayers() : [];
         const hasSat = layers.some(l => l instanceof AMap.TileLayer.Satellite);
         if (!hasSat) {
@@ -233,21 +304,21 @@ export default {
         }
       }
 
-      // 清除之前的多段线或 Loca 图层
-      if (this.polylines) {
-        this.polylines.forEach(poly => poly.setMap(null));
-      }
-      this.polylines = [];
-      if (this.locaLineLayer) {
-        this.locaLineLayer.setMap(null);
-        this.locaLineLayer = null;
-      }
-      if (this.locaContainer && typeof this.locaContainer.clear === 'function') {
-        this.locaContainer.clear();
+      this.clearTrackLayers();
+
+      const segments = [];
+      for (let i = 0; i < this.points.length - 1; i += 1) {
+        const p1 = this.points[i];
+        const p2 = this.points[i + 1];
+        segments.push({
+          coordinates: [
+            [p1.Longitude, p1.Latitude, p1['Altitude(m)']],
+            [p2.Longitude, p2.Latitude, p2['Altitude(m)']]
+          ],
+          metric: this.getMetricValue(p1, this.selectedMetric)
+        });
       }
 
-      // 3D轨迹线数据 [lng, lat, altitude]
-      const lineCoords = this.points.map(p => [p.Longitude, p.Latitude, p['Altitude(m)']]);
       const hasLoca = window.AMap && window.Loca && typeof window.Loca.Container === 'function';
       if (hasLoca) {
         if (!this.locaContainer) {
@@ -256,40 +327,44 @@ export default {
         const source = new Loca.GeoJSONSource({
           data: {
             type: 'FeatureCollection',
-            features: [{
+            features: segments.map(seg => ({
               type: 'Feature',
               geometry: {
                 type: 'LineString',
-                coordinates: lineCoords
+                coordinates: seg.coordinates
               },
-              properties: {}
-            }]
+              properties: {
+                metric: seg.metric
+              }
+            }))
           }
         });
         this.locaLineLayer = new Loca.LineLayer({
           zIndex: 30,
-          lineWidth: 1.0,
-          opacity: 0.55
+          lineWidth: 3,
+          opacity: 0.8
         });
         this.locaLineLayer.setSource(source, {
           height: (index, feature) => feature.geometry.coordinates[index][2],
-          color: '#ffa500'
+          color: (index, feature) => this.getMetricColor(this.selectedMetric, feature.properties.metric)
         });
         this.locaContainer.add(this.locaLineLayer);
       } else {
-        const polyline = new AMap.Polyline({
-          path: lineCoords,
-          enableAltitude: true,
-          strokeColor: '#ffa500',
-          strokeWeight: 4,
-          showDir: false,
-          geodesic: true
+        segments.forEach(seg => {
+          const polyline = new AMap.Polyline({
+            path: seg.coordinates,
+            enableAltitude: true,
+            strokeColor: this.getMetricColor(this.selectedMetric, seg.metric),
+            strokeWeight: 4,
+            showDir: false,
+            geodesic: true,
+            opacity: 0.9
+          });
+          polyline.setMap(this.map);
+          this.segmentLines.push(polyline);
         });
-        polyline.setMap(this.map);
-        this.polylines.push(polyline);
       }
 
-      // 使用 AMap.Text 可能在当前版本无实现，改为仅路线与标记。
       if (this.altitudeLabels && this.altitudeLabels.length > 0) {
         this.altitudeLabels.forEach(label => label.setMap(null));
       }
@@ -442,6 +517,50 @@ export default {
         }
       }
       return null;
+    },
+    getMetricColor(metric, value) {
+      if (value === null || value === undefined || Number.isNaN(value)) {
+        return '#cbd5e1';
+      }
+      if (metric === 'Signal_dBm') {
+        if (value >= -85) return '#22c55e';
+        if (value >= -95) return '#84cc16';
+        if (value >= -105) return '#eab308';
+        return '#ef4444';
+      }
+      if (metric === 'Avg_Ping(ms)') {
+        if (value <= 30) return '#22c55e';
+        if (value <= 60) return '#84cc16';
+        if (value <= 100) return '#eab308';
+        return '#ef4444';
+      }
+      if (metric === 'Jitter(ms)') {
+        if (value <= 10) return '#22c55e';
+        if (value <= 20) return '#84cc16';
+        if (value <= 50) return '#eab308';
+        return '#ef4444';
+      }
+      if (metric === 'Loss_Rate(%)') {
+        if (value <= 1) return '#22c55e';
+        if (value <= 3) return '#84cc16';
+        if (value <= 8) return '#eab308';
+        return '#ef4444';
+      }
+      return '#cbd5e1';
+    },
+    clearTrackLayers() {
+      if (this.segmentLines && this.segmentLines.length) {
+        this.segmentLines.forEach(line => line.setMap(null));
+        this.segmentLines = [];
+      }
+      if (this.locaLineLayer) {
+        this.locaLineLayer.clear();
+        this.locaLineLayer.setMap(null);
+        this.locaLineLayer = null;
+      }
+      if (this.locaContainer) {
+        this.locaContainer.clear();
+      }
     },
     formatLegendValue(name, value) {
       if (value === null || value === undefined || Number.isNaN(value)) return '-';
@@ -738,6 +857,11 @@ export default {
   watch: {
     themeMode() {
       this.initChart();
+    },
+    selectedMetric() {
+      if (this.points.length > 0) {
+        this.drawTrack();
+      }
     }
   },
   mounted() {
@@ -817,35 +941,78 @@ h1 {
 .app-container.night .map {
   border-color: rgba(148, 163, 184, 0.2);
 }
-.realtime-info-panel {
+.right-panel-group {
   position: absolute;
   top: 12px;
   right: 12px;
   z-index: 30;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   max-width: min(360px, calc(100% - 24px));
   max-height: calc(100% - 24px);
-  overflow: auto;
-  padding: 10px 12px;
-  border-radius: 10px;
+  overflow: hidden;
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
   border: 1px solid rgba(148, 163, 184, 0.25);
-  background: rgba(255, 255, 255, 0.74);
-  backdrop-filter: blur(4px);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
-  pointer-events: none;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
 }
-.app-container.night .realtime-info-panel {
-  background: rgba(2, 8, 23, 0.72);
-  border-color: rgba(148, 163, 184, 0.25);
+.app-container.night .panel {
+  background: rgba(2, 8, 23, 0.78);
+  border-color: rgba(148, 163, 184, 0.2);
 }
-.panel-title {
-  font-size: 12px;
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.82;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+}
+.panel-body {
+  padding: 10px 12px;
+  overflow: auto;
+  max-height: 280px;
+}
+.metric-description p,
+.metric-description ul {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  color: inherit;
+}
+.metric-description ul {
+  padding-left: 18px;
+}
+.metric-description li {
+  margin-bottom: 6px;
+}
+.metric-description .good { color: #16a34a; font-weight: 600; }
+.metric-description .normal { color: #65a30d; font-weight: 600; }
+.metric-description .poor { color: #ca8a04; font-weight: 600; }
+.metric-description .bad { color: #dc2626; font-weight: 600; }
+.info-grid {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) 1fr;
+  gap: 4px 10px;
+  font-size: 11px;
+  line-height: 1.3;
+}
+.panel-header button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+}
+.control-label.metric-select {
+  min-width: 160px;
 }
 .info-grid {
   display: grid;
