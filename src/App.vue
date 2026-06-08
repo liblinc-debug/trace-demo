@@ -536,7 +536,7 @@ export default {
     play() {
       if (this.isPlaying) return;
       this.isPlaying = true;
-      const interval = Math.max(20, 200 / this.playbackRate);
+      const interval = Math.max(10, 200 / this.playbackRate);
       this.timer = setInterval(() => {
         if (this.currentIndex < this.points.length - 1) {
           this.currentIndex++;
