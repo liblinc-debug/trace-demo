@@ -107,6 +107,7 @@ export default {
       altitudeMarker: null,
       altitudeLabels: [],
       legendValues: {},
+      mapViewSyncHandler: null,
       realtimeFields: [
         'Timestamp', 'Latitude', 'Longitude', 'Altitude(m)', 'Speed(m/s)', 'Climb(m/s)', 'Heading(deg)',
           'Loss_Rate(%)', 'Avg_Ping(ms)', 'Dist_to_Arm_Pt(m)', 'Flight_Dist(m)', 'WP_Speed(m/s)',
@@ -237,7 +238,7 @@ export default {
       if (this.points.length > 0) {
         try {
           await this.loadAMapScript();
-          await this.drawTrack();
+          await this.drawTrack({ resetViewport: true });
         } catch (err) {
           console.error('AMap 加载失败:', err);
           alert('地图脚本加载失败，请检查网络或 API Key。');
@@ -279,7 +280,53 @@ export default {
       });
       return this.loadingMapScript;
     },
-    async drawTrack() {
+    getCurrentTrackPoint() {
+      if (!this.points.length) return null;
+      const safeIndex = Math.min(Math.max(0, Number(this.currentIndex) || 0), this.points.length - 1);
+      return this.points[safeIndex] || this.points[0] || null;
+    },
+    getPointPosition(point) {
+      if (!point) return null;
+      return [point.Longitude, point.Latitude, point['Altitude(m)']];
+    },
+    getPointHeading(point) {
+      if (!point) return 0;
+      const heading = point['Heading(deg)'] != null ? point['Heading(deg)'] : point.Heading;
+      return heading != null ? heading : 0;
+    },
+    applyMapViewState(viewState) {
+      if (!this.map || !viewState) return;
+      if (typeof viewState.zoom === 'number' && typeof this.map.setZoom === 'function') {
+        this.map.setZoom(viewState.zoom);
+      }
+      if (viewState.center && typeof this.map.setCenter === 'function') {
+        this.map.setCenter(viewState.center);
+      }
+      if (typeof viewState.rotation === 'number' && typeof this.map.setRotation === 'function') {
+        this.map.setRotation(viewState.rotation);
+      }
+      if (typeof viewState.pitch === 'number' && typeof this.map.setPitch === 'function') {
+        this.map.setPitch(viewState.pitch);
+      }
+    },
+    getMapViewState() {
+      if (!this.map) return null;
+      const state = {};
+      if (typeof this.map.getCenter === 'function') {
+        state.center = this.map.getCenter();
+      }
+      if (typeof this.map.getZoom === 'function') {
+        state.zoom = this.map.getZoom();
+      }
+      if (typeof this.map.getRotation === 'function') {
+        state.rotation = this.map.getRotation();
+      }
+      if (typeof this.map.getPitch === 'function') {
+        state.pitch = this.map.getPitch();
+      }
+      return state;
+    },
+    async drawTrack(options = {}) {
       if (this.points.length === 0) return;
       if (!this.mapScriptLoaded && !window.AMap) {
         await this.loadAMapScript();
@@ -304,6 +351,10 @@ export default {
       }
 
       const path = this.points.map(p => [p.Longitude, p.Latitude]);
+      const currentPoint = this.getCurrentTrackPoint() || this.points[0];
+      const currentPosition = this.getPointPosition(currentPoint) || path[0];
+      const preserveViewport = !options.resetViewport;
+      const viewState = preserveViewport ? this.getMapViewState() : null;
       if (!this.map) {
         this.map = new AMap.Map(this.$refs.mapContainer, {
           viewMode: '3D',
@@ -404,45 +455,52 @@ export default {
     //     size: new AMap.Size(32, 32),
     //     anchor: 'center'
     //   });
-    const icon = new AMap.Icon({
+      const icon = new AMap.Icon({
         image: 'https://static.airsensor.top/static/img/icon/move_online.svg',
         size: new AMap.Size(32, 32),
         anchor: 'center'
       });
 
-      const initialHeading = this.points[0].Heading != null ? this.points[0].Heading : 0;
-      const adjustedInitialHeading = this.getMarkerHeading(initialHeading);
+      const currentHeading = this.getPointHeading(currentPoint);
+      const adjustedCurrentHeading = this.getMarkerHeading(currentHeading);
       if (!this.marker) {
         this.marker = new AMap.Marker({
-          position: [path[0][0], path[0][1], this.points[0]['Altitude(m)']],
+          position: currentPosition,
           icon,
           offset: new AMap.Pixel(-16, -16)
         });
         this.marker.setMap(this.map);
       } else {
-        this.marker.setPosition([path[0][0], path[0][1], this.points[0]['Altitude(m)']]);
+        this.marker.setPosition(currentPosition);
       }
-      this.applyMarkerHeading(this.marker, adjustedInitialHeading);
-      this.map.setCenter([path[0][0], path[0][1]]);
-      this.map.setFitView([this.marker]);
+      this.applyMarkerHeading(this.marker, adjustedCurrentHeading);
+      if (!preserveViewport) {
+        this.map.setCenter([path[0][0], path[0][1]]);
+        this.map.setFitView([this.marker]);
+      } else {
+        this.applyMapViewState(viewState);
+      }
       // 在视角变化后更新飞机航向
       if (this.map && this.marker) {
-        const refreshHeading = () => {
+        if (this.mapViewSyncHandler) {
+          this.map.off('moveend', this.mapViewSyncHandler);
+          this.map.off('rotate', this.mapViewSyncHandler);
+          this.map.off('zoomchange', this.mapViewSyncHandler);
+        }
+        this.mapViewSyncHandler = () => {
           const idx = Math.min(Math.max(0, this.currentIndex), this.points.length - 1);
-          if (this.points[idx] && this.points[idx].Heading != null) {
-            const heading = this.points[idx].Heading;
-            this.applyMarkerHeading(this.marker, this.getMarkerHeading(heading));
-          }
+          const heading = this.getPointHeading(this.points[idx]);
+          this.applyMarkerHeading(this.marker, this.getMarkerHeading(heading));
         };
-        this.map.on('moveend', refreshHeading);
-        this.map.on('rotate', refreshHeading);
-        this.map.on('zoomchange', refreshHeading);
+        this.map.on('moveend', this.mapViewSyncHandler);
+        this.map.on('rotate', this.mapViewSyncHandler);
+        this.map.on('zoomchange', this.mapViewSyncHandler);
       }
       // 海拔显示标记
       if (this.altitudeMarker) { this.altitudeMarker.setMap(null); }
       this.altitudeMarker = new AMap.Marker({
-        position: [path[0][0], path[0][1], this.points[0]['Altitude(m)']],
-        content: `<div class="alt-label">${(this.points[0]['Altitude(m)'] || 0).toFixed(1)}m</div>`,
+        position: currentPosition,
+        content: `<div class="alt-label">${(currentPoint['Altitude(m)'] || 0).toFixed(1)}m</div>`,
         offset: new AMap.Pixel(-40, -50),
         zIndex: 999
       });
@@ -732,7 +790,7 @@ export default {
       const p = this.points[safeIndex];
       const pos = [p.Longitude, p.Latitude, p['Altitude(m)']];
       this.marker.setPosition(pos);
-      const heading = p['Heading(deg)'] != null ? p['Heading(deg)'] : 0;
+      const heading = this.getPointHeading(p);
       const markerHeading = this.getMarkerHeading(heading);
       this.applyMarkerHeading(this.marker, markerHeading);
       this.map.setCenter(pos);
@@ -980,7 +1038,7 @@ export default {
     },
     selectedMetric() {
       if (this.points.length > 0) {
-        this.drawTrack();
+        this.drawTrack({ resetViewport: false });
       }
     },
     showChangeMarkers() {
@@ -1008,6 +1066,11 @@ export default {
   },
   beforeUnmount() {
     window.removeEventListener('resize', this.handleWindowResize);
+    if (this.map && this.mapViewSyncHandler) {
+      this.map.off('moveend', this.mapViewSyncHandler);
+      this.map.off('rotate', this.mapViewSyncHandler);
+      this.map.off('zoomchange', this.mapViewSyncHandler);
+    }
   }
 };
 </script>
