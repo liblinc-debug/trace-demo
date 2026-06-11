@@ -30,7 +30,7 @@
           <option v-for="r in speedOptions" :key="r" :value="r">{{ r }}x</option>
         </select>
       </label>
-      <input type="range" min="0" :max="points.length-1" v-model.number="currentIndex" @input="onSliderChange" />
+      <input class="timeline-range" type="range" min="0" :max="points.length-1" v-model.number="currentIndex" @input="onSliderChange" />
     </div>
     <div class="map-stage">
       <div class="map" ref="mapContainer"></div>
@@ -92,8 +92,8 @@ export default {
       legendValues: {},
       realtimeFields: [
         'Timestamp', 'Latitude', 'Longitude', 'Altitude(m)', 'Speed(m/s)', 'Climb(m/s)', 'Heading(deg)',
-        'Loss_Rate(%)', 'Avg_Ping(ms)', 'Dist_to_Arm_Pt(m)', 'Flight_Dist(m)', 'WP_Speed(m/s)',
-        'WP_Radius(m)', 'WP_Accel(m/s2)', 'Network', 'Band', 'Signal_dBm', 'RSRP', 'RSRQ', 'SNR', 'RSSI', 'Jitter(ms)'
+          'Loss_Rate(%)', 'Avg_Ping(ms)', 'Dist_to_Arm_Pt(m)', 'Flight_Dist(m)', 'WP_Speed(m/s)',
+          'WP_Radius(m)', 'WP_Accel(m/s2)', 'Network', 'Band', 'Cell_ID', 'PCI', 'Signal_dBm', 'RSRP', 'RSRQ', 'SNR', 'RSSI', 'Jitter(ms)'
       ],
       themeMode: 'day',
       themeOptions: [
@@ -369,6 +369,7 @@ export default {
         this.altitudeLabels.forEach(label => label.setMap(null));
       }
       this.altitudeLabels = [];
+      this.clearChangeMarkers();
     //   const icon = new AMap.Icon({
     //     image: 'https://cdn-icons-png.flaticon.com/512/1384/1384060.png',
     //     size: new AMap.Size(32, 32),
@@ -447,6 +448,8 @@ export default {
       //   label.setMap(this.map);
       //   this.altitudeLabels.push(label);
       // }
+
+      this.renderChangeMarkers();
     },
     getColorFromAltitude(ratio) {
       // 从蓝色（低海拔）到红色（高海拔）
@@ -565,6 +568,74 @@ export default {
       if (this.locaContainer && typeof this.locaContainer.clear === 'function') {
         this.locaContainer.clear();
       }
+      this.clearChangeMarkers();
+    },
+    clearChangeMarkers() {
+      const removeMarkers = markers => {
+        if (!Array.isArray(markers)) return [];
+        markers.forEach(marker => {
+          if (marker && typeof marker.setMap === 'function') {
+            marker.setMap(null);
+          }
+        });
+        return [];
+      };
+      this.cellIdMarkers = removeMarkers(this.cellIdMarkers);
+      this.pciMarkers = removeMarkers(this.pciMarkers);
+    },
+    createChangeMarker(position, text, variant) {
+      if (!window.AMap || !position) return null;
+      const marker = new AMap.Marker({
+        position,
+        content: `
+          <div class="change-marker ${variant}">
+            <span class="change-marker-dot"></span>
+            <span class="change-marker-text">${text}</span>
+          </div>
+        `,
+        offset: new AMap.Pixel(-10, -10),
+        zIndex: 1000
+      });
+      marker.setMap(this.map);
+      return marker;
+    },
+    normalizeComparableValue(value) {
+      if (value === null || value === undefined || value === '') return '';
+      return String(value).trim();
+    },
+    getFieldChangePoints(fieldName) {
+      const markers = [];
+      for (let i = 1; i < this.points.length; i += 1) {
+        const prevValue = this.points[i - 1]?.[fieldName];
+        const currentValue = this.points[i]?.[fieldName];
+        const prevNormalized = this.normalizeComparableValue(prevValue);
+        const currentNormalized = this.normalizeComparableValue(currentValue);
+        if (!prevNormalized || !currentNormalized || prevNormalized === currentNormalized) continue;
+        markers.push({
+          position: [this.points[i].Longitude, this.points[i].Latitude, this.points[i]['Altitude(m)']],
+          value: currentValue
+        });
+      }
+      return markers;
+    },
+    renderChangeMarkers() {
+      this.clearChangeMarkers();
+      if (!this.map || !this.points.length) return;
+
+      const cellIdChanges = this.getFieldChangePoints('Cell_ID');
+      const pciChanges = this.getFieldChangePoints('PCI');
+
+      this.cellIdMarkers = cellIdChanges.map(change => this.createChangeMarker(
+        change.position,
+        `Cell_ID: ${change.value}`,
+        'cell-id-marker'
+      )).filter(Boolean);
+
+      this.pciMarkers = pciChanges.map(change => this.createChangeMarker(
+        change.position,
+        `PCI: ${change.value}`,
+        'pci-marker'
+      )).filter(Boolean);
     },
     formatLegendValue(name, value) {
       if (value === null || value === undefined || Number.isNaN(value)) return '-';
@@ -926,6 +997,11 @@ h1 {
 .controls input[type="range"] {
   font-size: 1em;
 }
+.timeline-range {
+  flex: 1 1 260px;
+  min-width: 220px;
+  width: 100%;
+}
 .app-container.night .controls select,
 .app-container.night .controls button {
   background: rgba(8, 15, 33, 0.96);
@@ -1056,5 +1132,36 @@ h1 {
   color: #fff;
   border: 1px solid rgba(255,255,255,0.5);
   white-space: nowrap;
+}
+.change-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
+}
+.change-marker-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  flex: 0 0 auto;
+}
+.change-marker-text {
+  line-height: 1;
+}
+.change-marker.cell-id-marker {
+  color: #7dd3fc;
+  background: rgba(224, 242, 254, 0.96);
+}
+.change-marker.pci-marker {
+  color: #1d4ed8;
+  background: rgba(191, 219, 254, 0.96);
 }
 </style>
