@@ -19,6 +19,10 @@
       <button @click="play" :disabled="!canPlay">播放</button>
       <button @click="pause" :disabled="!isPlaying">暂停</button>
       <label class="control-label">
+        <span>变化点：</span>
+        <input type="checkbox" v-model="showChangeMarkers" />
+      </label>
+      <label class="control-label">
         <span>风格：</span>
         <select v-model="themeMode">
           <option v-for="theme in themeOptions" :key="theme.value" :value="theme.value">{{ theme.label }}</option>
@@ -109,6 +113,7 @@ export default {
       ],
       metricInfoCollapsed: false,
       realtimeInfoCollapsed: false,
+      showChangeMarkers: true,
       playbackRate: 1,
       speedOptions: [0.5, 1, 1.5, 2, 4, 8, 16],
       segmentLines: [],
@@ -583,11 +588,17 @@ export default {
       this.cellIdMarkers = removeMarkers(this.cellIdMarkers);
       this.pciMarkers = removeMarkers(this.pciMarkers);
     },
-    createChangeMarker(position, text, variant) {
+    createChangeMarker(position, text, variant, compact = false) {
       if (!window.AMap || !position) return null;
       const marker = new AMap.Marker({
         position,
-        content: `
+        content: compact
+          ? `
+          <div class="change-marker-dot-only">
+            <span class="change-marker-dot"></span>
+          </div>
+        `
+          : `
           <div class="change-marker ${variant}">
             <span class="change-marker-dot"></span>
             <span class="change-marker-text">${text}</span>
@@ -628,13 +639,15 @@ export default {
       this.cellIdMarkers = cellIdChanges.map(change => this.createChangeMarker(
         change.position,
         `Cell_ID: ${change.value}`,
-        'cell-id-marker'
+        'cell-id-marker',
+        !this.showChangeMarkers
       )).filter(Boolean);
 
       this.pciMarkers = pciChanges.map(change => this.createChangeMarker(
         change.position,
         `PCI: ${change.value}`,
-        'pci-marker'
+        'pci-marker',
+        !this.showChangeMarkers
       )).filter(Boolean);
     },
     formatLegendValue(name, value) {
@@ -937,6 +950,11 @@ export default {
       if (this.points.length > 0) {
         this.drawTrack();
       }
+    },
+    showChangeMarkers() {
+      if (this.points.length > 0) {
+        this.renderChangeMarkers();
+      }
     }
   },
   mounted() {
@@ -1094,6 +1112,12 @@ h1 {
 .control-label.metric-select {
   min-width: 160px;
 }
+.control-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #38bdf8;
+}
 .info-grid {
   display: grid;
   grid-template-columns: minmax(72px, auto) 1fr;
@@ -1146,15 +1170,26 @@ h1 {
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
 }
 .change-marker-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
-  background: currentColor;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
+  background: #38bdf8;
+  /* box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); */
   flex: 0 0 auto;
 }
 .change-marker-text {
   line-height: 1;
+}
+.change-marker-dot-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(224, 242, 254, 0.96);
+  border: 1px solid rgba(125, 211, 252, 0.8);
+  /* box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18); */
 }
 .change-marker.cell-id-marker {
   color: #7dd3fc;
