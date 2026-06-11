@@ -1,5 +1,10 @@
 node_modules/
 dist/
 .env
+*.zip
+logs/**/*.csv
+*/**/.DS_Store
+.DS_Store
+logs/**/*.json
 logs.zip
 logs/202603*/*
