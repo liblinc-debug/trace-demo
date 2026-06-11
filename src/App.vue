@@ -121,6 +121,9 @@ export default {
       selectedMetric: 'Signal_dBm',
       metricOptions: [
         { value: 'Signal_dBm', label: 'Signal_dBm' },
+        { value: 'RSRQ', label: 'RSRQ' },
+        { value: 'SNR', label: 'SNR' },
+        { value: 'RSSI', label: 'RSSI' },
         { value: 'Avg_Ping(ms)', label: 'Avg_Ping(ms)' },
         { value: 'Loss_Rate(%)', label: 'Loss_Rate(%)' },
         { value: 'Jitter(ms)', label: 'Jitter(ms)' }
@@ -182,6 +185,31 @@ export default {
             <li><span class="normal"><font color="orange">一般 1 ～ 3%</font></span>：黄绿色表示存在少量丢包，通常可接受。</li>
             <li><span class="poor"><font color="yellow">较差 3 ～ 8%</font></span>：黄色表示丢包显著，可能影响控制与图传。</li>
             <li><span class="bad"><font color="red">很差 > 8%</font></span>：红色表示丢包率高，需重点关注网络与链路质量。</li>
+          </ul>`,
+        RSRQ: `
+          <p><strong>RSRQ</strong> 参考信号接收质量评估：</p>
+          <ul>
+            <li><span class="good"><font color="green">优良 ≥ -10 dB</font></span>：绿色表示信号质量很好，干扰极低。</li>
+            <li><span class="normal"><font color="orange">一般 -12 ～ -11 dB</font></span>：黄绿色表示信号质量正常，可接受。</li>
+            <li><span class="poor"><font color="yellow">较差 -15 ～ -13 dB</font></span>：黄色表示信号质量偏低，可能存在干扰。</li>
+            <li><span class="bad"><font color="red">很差 ≤ -16 dB</font></span>：红色表示信号质量差，干扰严重。</li>
+          </ul>
+          <p>说明：5G 网络中 RSRQ 通常在 -3dB（极好）到 -20dB（极差）之间。</p>`,
+        SNR: `
+          <p><strong>SNR</strong> 信噪比评估：</p>
+          <ul>
+            <li><span class="good"><font color="green">优良 ≥ 20 dB</font></span>：绿色表示信噪比很好，数据传输稳定。</li>
+            <li><span class="normal"><font color="orange">一般 13 ～ 19 dB</font></span>：黄绿色表示信噪比正常，满足业务需求。</li>
+            <li><span class="poor"><font color="yellow">较差 5 ～ 12 dB</font></span>：黄色表示信噪比偏低，可能影响速率。</li>
+            <li><span class="bad"><font color="red">很差 &lt; 5 dB</font></span>：红色表示信噪比差，易出现误码和重传。</li>
+          </ul>`,
+        RSSI: `
+          <p><strong>RSSI</strong> 接收信号强度指示评估：</p>
+          <ul>
+            <li><span class="good"><font color="green">优良 ≥ -70 dBm</font></span>：绿色表示信号强度很强。</li>
+            <li><span class="normal"><font color="orange">一般 -80 ～ -71 dBm</font></span>：黄绿色表示信号强度较好。</li>
+            <li><span class="poor"><font color="yellow">较差 -90 ～ -81 dBm</font></span>：黄色表示信号强度偏弱。</li>
+            <li><span class="bad"><font color="red">很差 ≤ -91 dBm</font></span>：红色表示信号强度很弱。</li>
           </ul>`
       };
       return meta[this.selectedMetric] || '<p>请选择一个指标以查看对应说明。</p>';
@@ -606,6 +634,24 @@ export default {
         if (value >= -85) return '#22c55e';
         if (value >= -95) return '#84cc16';
         if (value >= -105) return '#eab308';
+        return '#ef4444';
+      }
+      if (metric === 'RSRQ') {
+        if (value >= -10) return '#22c55e';
+        if (value >= -12) return '#84cc16';
+        if (value >= -15) return '#eab308';
+        return '#ef4444';
+      }
+      if (metric === 'SNR') {
+        if (value >= 20) return '#22c55e';
+        if (value >= 13) return '#84cc16';
+        if (value >= 5) return '#eab308';
+        return '#ef4444';
+      }
+      if (metric === 'RSSI') {
+        if (value >= -70) return '#22c55e';
+        if (value >= -80) return '#84cc16';
+        if (value >= -90) return '#eab308';
         return '#ef4444';
       }
       if (metric === 'Avg_Ping(ms)') {
