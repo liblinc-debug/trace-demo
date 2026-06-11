@@ -127,7 +127,7 @@ export default {
       metricInfoCollapsed: false,
       realtimeInfoCollapsed: false,
       showChangeMarkers: true,
-      chartCollapsed: false,
+      chartCollapsed: true,
       playbackRate: 1,
       speedOptions: [0.5, 1, 1.5, 2, 4, 8, 16],
       segmentLines: [],
@@ -1016,7 +1016,10 @@ export default {
 .app-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
   overflow: hidden;
   background: #f5f5f5;
   color: #222;
@@ -1334,6 +1337,18 @@ export default {
 </style>
 
 <style>
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+}
+
 .alt-label {
   font-size: 12px;
   padding: 2px 5px;
