@@ -14,7 +14,7 @@
             <option v-for="f in files" :key="f" :value="f">{{ f }}</option>
           </select>
           <label class="control-label metric-select">
-            <span>指标：</span>
+            <span>指标</span>
             <select v-model="selectedMetric">
               <option v-for="option in metricOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
             </select>
@@ -22,21 +22,22 @@
           <button @click="play" :disabled="!canPlay">播放</button>
           <button @click="pause" :disabled="!isPlaying">暂停</button>
           <label class="control-label">
-            <span>变化点：</span>
-            <input type="checkbox" v-model="showChangeMarkers" />
-          </label>
-          <label class="control-label">
-            <span>风格：</span>
-            <select v-model="themeMode">
-              <option v-for="theme in themeOptions" :key="theme.value" :value="theme.value">{{ theme.label }}</option>
-            </select>
-          </label>
-          <label class="control-label">
-            <span>速度：</span>
+            <span>速度</span>
             <select v-model.number="playbackRate">
               <option v-for="r in speedOptions" :key="r" :value="r">{{ r }}x</option>
             </select>
           </label>
+          <label class="control-label">
+            <span>站点</span>
+            <input type="checkbox" v-model="showChangeMarkers" />
+          </label>
+          <label class="control-label">
+            <span>风格</span>
+            <select v-model="themeMode">
+              <option v-for="theme in themeOptions" :key="theme.value" :value="theme.value">{{ theme.label }}</option>
+            </select>
+          </label>
+          
           <input class="timeline-range" type="range" min="0" :max="points.length-1" v-model.number="currentIndex" @input="onSliderChange" />
         </div>
       </div>
