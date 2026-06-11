@@ -65,17 +65,8 @@
           </div>
         </div>
       </div>
-      <div class="chart-shell" :class="{ collapsed: chartCollapsed }">
-        <div v-show="!chartCollapsed" class="chart-panel">
-          <div class="chart-panel-header">
-            <span>趋势图</span>
-            <button type="button" @click="toggleChartCollapsed">收起</button>
-          </div>
-          <div class="chart" ref="chartContainer"></div>
-        </div>
-        <button v-show="chartCollapsed" type="button" class="chart-collapse-handle" @click="toggleChartCollapsed">
-          展开趋势图
-        </button>
+      <div class="chart-shell">
+        <div class="chart" ref="chartContainer"></div>
       </div>
     </div>
   </div>
@@ -127,7 +118,6 @@ export default {
       metricInfoCollapsed: false,
       realtimeInfoCollapsed: false,
       showChangeMarkers: true,
-      chartCollapsed: false,
       playbackRate: 1,
       speedOptions: [0.5, 1, 1.5, 2, 4, 8, 16],
       segmentLines: [],
@@ -959,18 +949,8 @@ export default {
       if (this.map && typeof this.map.resize === 'function') {
         this.map.resize();
       }
-      if (this.chart && typeof this.chart.resize === 'function' && !this.chartCollapsed) {
+      if (this.chart && typeof this.chart.resize === 'function') {
         this.chart.resize();
-      }
-    },
-    toggleChartCollapsed() {
-      this.chartCollapsed = !this.chartCollapsed;
-      if (!this.chartCollapsed) {
-        this.$nextTick(() => {
-          if (this.chart && typeof this.chart.resize === 'function') {
-            this.chart.resize();
-          }
-        });
       }
     }
   },
@@ -987,13 +967,6 @@ export default {
       if (this.points.length > 0) {
         this.renderChangeMarkers();
       }
-    },
-    chartCollapsed() {
-      this.$nextTick(() => {
-        if (this.chart && typeof this.chart.resize === 'function' && !this.chartCollapsed) {
-          this.chart.resize();
-        }
-      });
     }
   },
   mounted() {
@@ -1104,6 +1077,7 @@ export default {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  --side-panel-width: 360px;
 }
 .map {
   position: absolute;
@@ -1212,76 +1186,15 @@ export default {
 .chart-shell {
   position: absolute;
   left: 14px;
-  right: 14px;
+  right: calc(14px + var(--side-panel-width) + 14px);
   bottom: 14px;
   z-index: 35;
   pointer-events: none;
 }
-.chart-shell.collapsed {
-  left: 14px;
-  right: auto;
-  width: 56px;
-}
-.chart-panel {
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  height: 100%;
-  pointer-events: auto;
-}
-.chart-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px;
-  border-radius: 18px 18px 0 0;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-bottom: none;
-  background: rgba(255, 255, 255, 0.78);
-  backdrop-filter: blur(12px);
-}
-.app-container.night .chart-panel-header {
-  background: rgba(2, 8, 23, 0.82);
-}
-.chart-panel-header span {
-  font-size: 13px;
-  font-weight: 700;
-  color: inherit;
-}
-.chart-panel-header button,
-.chart-collapse-handle {
-  border: none;
-  border-radius: 999px;
-  background: rgba(56, 189, 248, 0.16);
-  color: inherit;
-  cursor: pointer;
-  font-size: 12px;
-  padding: 6px 12px;
-}
-.chart-collapse-handle {
-  width: 56px;
-  height: clamp(210px, 22vh, 280px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  letter-spacing: 0.12em;
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 20px;
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18);
-  pointer-events: auto;
-}
-.app-container.night .chart-collapse-handle {
-  background: rgba(2, 8, 23, 0.82);
-}
 .chart {
   height: clamp(210px, 22vh, 280px);
   width: 100%;
-  border-radius: 0 0 20px 20px;
+  border-radius: 20px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(12px);
@@ -1294,12 +1207,18 @@ export default {
   border-color: rgba(148, 163, 184, 0.2);
 }
 @media (max-width: 1200px) {
+  .map-stage {
+    --side-panel-width: 320px;
+  }
   .right-panel-group {
     top: 168px;
     width: min(320px, calc(100% - 28px));
   }
 }
 @media (max-width: 900px) {
+  .map-stage {
+    --side-panel-width: 0px;
+  }
   .floating-toolbar {
     top: 10px;
     left: 10px;
@@ -1321,14 +1240,6 @@ export default {
     left: 10px;
     right: 10px;
     bottom: 10px;
-  }
-  .chart-shell.collapsed {
-    left: 10px;
-    right: auto;
-    width: 50px;
-  }
-  .chart-collapse-handle {
-    width: 50px;
   }
 }
 </style>
