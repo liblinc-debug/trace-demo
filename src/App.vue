@@ -122,9 +122,9 @@ export default {
       selectedMetric: 'Signal_dBm',
       metricOptions: [
         { value: 'Signal_dBm', label: 'Signal_dBm' },
-        { value: 'RSRQ', label: 'RSRQ' },
-        { value: 'SNR', label: 'SNR' },
-        { value: 'RSSI', label: 'RSSI' },
+        { value: 'RSRQ', label: 'RSRQ_dB' },
+        { value: 'SNR', label: 'SNR_dB' },
+        { value: 'RSSI', label: 'RSSI_dBm' },
         { value: 'Avg_Ping(ms)', label: 'Avg_Ping(ms)' },
         { value: 'Loss_Rate(%)', label: 'Loss_Rate(%)' },
         { value: 'Jitter(ms)', label: 'Jitter(ms)' }
