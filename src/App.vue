@@ -42,27 +42,47 @@
         </div>
       </div>
       <div class="right-panel-group">
-        <div class="panel realtime-info-panel" :class="themeMode" v-if="activePoint">
-          <div class="panel-header">
-            <div>实时信息</div>
-            <button type="button" @click="realtimeInfoCollapsed = !realtimeInfoCollapsed">{{ realtimeInfoCollapsed ? '展开' : '收起' }}</button>
-          </div>
-          <div class="panel-body" v-show="!realtimeInfoCollapsed">
-            <div class="info-grid">
-              <div v-for="row in realtimeRows" :key="row.label" class="info-row">
-                <span class="info-label">{{ row.label }}</span>
-                <span class="info-value">{{ row.value }}</span>
+        <div class="panel-shell realtime-panel-shell" v-if="activePoint" :class="{ collapsed: realtimeInfoCollapsed }">
+          <button
+            v-if="realtimeInfoCollapsed"
+            type="button"
+            class="panel-collapse-handle"
+            @click="toggleRealtimeInfoCollapsed(false)"
+          >
+            展开实时信息
+          </button>
+          <div v-else class="panel realtime-info-panel" :class="themeMode">
+            <div class="panel-header">
+              <div>实时信息</div>
+              <button type="button" @click="toggleRealtimeInfoCollapsed(true)">收起</button>
+            </div>
+            <div class="panel-body">
+              <div class="info-grid">
+                <div v-for="row in realtimeRows" :key="row.label" class="info-row">
+                  <span class="info-label">{{ row.label }}</span>
+                  <span class="info-value">{{ row.value }}</span>
+                </div>
               </div>
             </div>
           </div>
         </div>
-        <div class="panel metric-info-panel" :class="themeMode" v-if="activePoint">
-          <div class="panel-header">
-            <div>{{ selectedMetric }} 说明</div>
-            <button type="button" @click="metricInfoCollapsed = !metricInfoCollapsed">{{ metricInfoCollapsed ? '展开' : '收起' }}</button>
-          </div>
-          <div class="panel-body" v-show="!metricInfoCollapsed">
-            <div class="metric-description" v-html="metricDescriptionHtml"></div>
+        <div class="panel-shell metric-panel-shell" v-if="activePoint" :class="{ collapsed: metricInfoCollapsed }">
+          <button
+            v-if="metricInfoCollapsed"
+            type="button"
+            class="panel-collapse-handle"
+            @click="toggleMetricInfoCollapsed(false)"
+          >
+            展开{{ selectedMetric }}说明
+          </button>
+          <div v-else class="panel metric-info-panel" :class="themeMode">
+            <div class="panel-header">
+              <div>{{ selectedMetric }} 说明</div>
+              <button type="button" @click="toggleMetricInfoCollapsed(true)">收起</button>
+            </div>
+            <div class="panel-body">
+              <div class="metric-description" v-html="metricDescriptionHtml"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -129,10 +149,10 @@ export default {
         { value: 'Loss_Rate(%)', label: 'Loss_Rate(%)' },
         { value: 'Jitter(ms)', label: 'Jitter(ms)' }
       ],
-      metricInfoCollapsed: false,
-      realtimeInfoCollapsed: false,
+      metricInfoCollapsed: true,
+      realtimeInfoCollapsed: true,
       showChangeMarkers: true,
-      chartCollapsed: true,
+      chartCollapsed: false,
       playbackRate: 1,
       speedOptions: [0.5, 1, 1.5, 2, 4, 8, 16],
       segmentLines: [],
@@ -1077,6 +1097,12 @@ export default {
           }
         });
       }
+    },
+    toggleRealtimeInfoCollapsed(nextState) {
+      this.realtimeInfoCollapsed = nextState;
+    },
+    toggleMetricInfoCollapsed(nextState) {
+      this.metricInfoCollapsed = nextState;
     }
   },
   watch: {
@@ -1198,7 +1224,7 @@ export default {
   color: #f8fafc;
 }
 .floating-toolbar .controls {
-  width: 100%;
+  /* width: 100%; */
   border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.22);
   background: rgba(255, 255, 255, 0.78);
@@ -1229,14 +1255,30 @@ export default {
 .right-panel-group {
   position: absolute;
   top: 108px;
-  right: 14px;
+  right: 0;
   z-index: 30;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 10px;
-  width: min(360px, calc(100% - 28px));
+  width: fit-content;
   max-height: calc(100% - 168px);
   overflow: hidden;
+  pointer-events: none;
+}
+.panel-shell {
+  width: fit-content;
+  max-width: min(360px, calc(100vw - 28px));
+  display: flex;
+  justify-content: flex-end;
+  pointer-events: auto;
+}
+.panel-shell.collapsed {
+  width: 56px;
+}
+.realtime-panel-shell .panel,
+.metric-panel-shell .panel {
+  width: min(360px, calc(100vw - 28px));
 }
 .panel {
   display: flex;
@@ -1247,6 +1289,7 @@ export default {
   backdrop-filter: blur(8px);
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
   overflow: hidden;
+  pointer-events: auto;
 }
 .app-container.night .panel {
   background: rgba(2, 8, 23, 0.78);
@@ -1295,6 +1338,29 @@ export default {
   color: inherit;
   cursor: pointer;
   font-size: 12px;
+}
+.panel-collapse-handle {
+  width: 56px;
+  height: clamp(160px, 18vh, 220px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  letter-spacing: 0.12em;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.18);
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  pointer-events: auto;
+}
+.app-container.night .panel-collapse-handle {
+  background: rgba(2, 8, 23, 0.82);
+  border-color: rgba(148, 163, 184, 0.2);
 }
 .control-label.metric-select {
   min-width: 160px;
@@ -1409,7 +1475,14 @@ export default {
 @media (max-width: 1200px) {
   .right-panel-group {
     top: 168px;
-    width: min(320px, calc(100% - 28px));
+    width: fit-content;
+  }
+  .panel-shell {
+    max-width: min(320px, calc(100vw - 28px));
+  }
+  .realtime-panel-shell .panel,
+  .metric-panel-shell .panel {
+    width: min(320px, calc(100vw - 28px));
   }
 }
 @media (max-width: 900px) {
@@ -1425,10 +1498,24 @@ export default {
   .right-panel-group {
     top: auto;
     bottom: 286px;
-    right: 10px;
-    left: 10px;
-    width: auto;
+    right: 0;
+    left: auto;
+    width: fit-content;
     max-height: 34vh;
+  }
+  .panel-shell {
+    max-width: min(320px, calc(100vw - 20px));
+  }
+  .panel-shell.collapsed {
+    width: 50px;
+  }
+  .realtime-panel-shell .panel,
+  .metric-panel-shell .panel {
+    width: min(320px, calc(100vw - 20px));
+  }
+  .panel-collapse-handle {
+    width: 50px;
+    height: clamp(120px, 16vh, 180px);
   }
   .chart-shell {
     left: 10px;
