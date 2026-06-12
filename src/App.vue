@@ -13,6 +13,9 @@
             <option value="" disabled>请选择飞行记录...</option>
             <option v-for="f in files" :key="f" :value="f">{{ f }}</option>
           </select>
+          <button type="button" @click="downloadCurrentCsv" :disabled="!selectedDir || !selectedFile">
+            下载
+          </button>
           <label class="control-label metric-select">
             <span>指标</span>
             <select v-model="selectedMetric">
@@ -295,6 +298,30 @@ export default {
         this.initChart();
       } else {
         alert('没有有效的轨迹数据');
+      }
+    },
+    async downloadCurrentCsv() {
+      if (!this.selectedDir || !this.selectedFile) {
+        alert('请先选择日期目录和飞行记录');
+        return;
+      }
+      try {
+        const res = await axios.get('/api/logs/file', {
+          params: { dir: this.selectedDir, name: this.selectedFile },
+          responseType: 'blob'
+        });
+        const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = this.selectedFile;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('CSV 下载失败:', err);
+        alert('CSV 下载失败，请稍后重试');
       }
     },
     loadAMapScript() {
@@ -1190,6 +1217,14 @@ export default {
 .controls input[type="range"] {
   font-size: 1em;
 }
+.download-button {
+  padding: 8px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.16);
+  color: inherit;
+  cursor: pointer;
+}
 .timeline-range {
   flex: 1 1 260px;
   min-width: 220px;
@@ -1234,6 +1269,11 @@ export default {
 }
 .app-container.night .controls select,
 .app-container.night .controls button {
+  background: rgba(8, 15, 33, 0.96);
+  color: #f8fafc;
+  border-color: rgba(148, 163, 184, 0.25);
+}
+.app-container.night .download-button {
   background: rgba(8, 15, 33, 0.96);
   color: #f8fafc;
   border-color: rgba(148, 163, 184, 0.25);
