@@ -2,6 +2,28 @@
   <div class="app-container" :class="themeMode">
     <div class="map-stage">
       <div class="map" ref="mapContainer"></div>
+      <div class="panel-shell flight-log-panel-shell" v-if="selectedDir || files.length" :class="{ collapsed: flightLogCollapsed }">
+        <button
+          v-if="flightLogCollapsed"
+          type="button"
+          class="panel-collapse-handle flight-log-collapse-handle"
+          @click="toggleFlightLogCollapsed(false)"
+        >
+          展开日志列表
+        </button>
+        <div v-else class="panel flight-log-panel" :class="themeMode">
+          <div class="panel-header">
+            <div>飞行日志列表</div>
+            <button type="button" @click="toggleFlightLogCollapsed(true)">收起</button>
+          </div>
+          <div class="panel-body flight-log-body">
+            <div class="flight-log-tip">按住 Shift 可连续多选，第一条文件用于趋势图和飞行动画。</div>
+            <select v-model="selectedFiles" multiple :size="Math.max(8, Math.min(16, files.length || 8))" @change="onFilesChange">
+              <option v-for="f in files" :key="f" :value="f">{{ f }}</option>
+            </select>
+          </div>
+        </div>
+      </div>
       <div class="floating-toolbar">
 
         <div class="controls">
@@ -9,11 +31,7 @@
             <option value="" disabled>请选择日期目录...</option>
             <option v-for="d in dirs" :key="d" :value="d">{{ d }}</option>
           </select>
-          <select v-model="selectedFile" @change="onFileChange">
-            <option value="" disabled>请选择飞行记录...</option>
-            <option v-for="f in files" :key="f" :value="f">{{ f }}</option>
-          </select>
-          <button type="button" @click="downloadCurrentCsv" :disabled="!selectedDir || !selectedFile">
+          <button type="button" @click="downloadCurrentCsv" :disabled="!selectedDir || !primarySelectedFile">
             下载
           </button>
           <label class="control-label metric-select">
@@ -31,7 +49,7 @@
             </select>
           </label>
           <label class="control-label">
-            <span>站点</span>
+            <span>站点名称</span>
             <input type="checkbox" v-model="showChangeMarkers" />
           </label>
           <label class="control-label">
@@ -40,7 +58,7 @@
               <option v-for="theme in themeOptions" :key="theme.value" :value="theme.value">{{ theme.label }}</option>
             </select>
           </label>
-          
+
           <input class="timeline-range" type="range" min="0" :max="points.length-1" v-model.number="currentIndex" @input="onSliderChange" />
         </div>
       </div>
@@ -116,15 +134,16 @@ export default {
       dirs: [],
       files: [],
       selectedDir: '',
-      selectedFile: '',
+      selectedFiles: [],
       points: [],
+      flightTracks: [],
       currentIndex: 0,
       isPlaying: false,
       timer: null,
       map: null,
       marker: null,
       locaContainer: null,
-      locaLineLayer: null,
+      trackLayers: [],
       polylines: [],
       chart: null,
       mapScriptLoaded: false,
@@ -132,6 +151,7 @@ export default {
       altitudeLabels: [],
       legendValues: {},
       mapViewSyncHandler: null,
+      siteMarkers: [],
       realtimeFields: [
         'Timestamp', 'Latitude', 'Longitude', 'Altitude(m)', 'Speed(m/s)', 'Climb(m/s)', 'Heading(deg)',
           'Loss_Rate(%)', 'Avg_Ping(ms)', 'Dist_to_Arm_Pt(m)', 'Flight_Dist(m)', 'WP_Speed(m/s)',
@@ -156,15 +176,18 @@ export default {
       realtimeInfoCollapsed: true,
       showChangeMarkers: true,
       chartCollapsed: false,
+      flightLogCollapsed: false,
       playbackRate: 1,
       speedOptions: [0.5, 1, 1.5, 2, 4, 8, 16],
-      segmentLines: [],
-      pointsConverted: false
+      segmentLines: []
     };
   },
   computed: {
     canPlay() {
       return this.points.length > 0 && !this.isPlaying;
+    },
+    primarySelectedFile() {
+      return this.selectedFiles[0] || '';
     },
     activePoint() {
       return this.points[this.currentIndex] || null;
@@ -251,41 +274,49 @@ export default {
     async fetchFilesForDir() {
       if (!this.selectedDir) {
         this.files = [];
-        this.selectedFile = '';
+        this.selectedFiles = [];
+        this.flightTracks = [];
+        this.points = [];
+        this.clearTrackLayers();
+        this.clearFlightMarkers();
+        this.initChart();
         return;
       }
       const res = await axios.get('/api/logs', { params: { dir: this.selectedDir } });
       const files = Array.isArray(res.data) ? res.data : [];
       this.files = files.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
       if (this.files.length > 0) {
-        this.selectedFile = this.files[0];
-        await this.onFileChange();
+        this.selectedFiles = [this.files[0]];
+        await this.onFilesChange();
       } else {
-        this.selectedFile = '';
+        this.selectedFiles = [];
+        this.flightTracks = [];
         this.points = [];
       }
     },
     async onDirChange() {
       await this.fetchFilesForDir();
     },
-    async onFileChange() {
+    async onFilesChange() {
       this.pause();
-      if (!this.selectedDir || !this.selectedFile) return;
-      const res = await axios.get('/api/logs/file', {
-        params: { dir: this.selectedDir, name: this.selectedFile }
-      });
-      const text = res.data;
-      const parsed = Papa.parse(text, { header: true, dynamicTyping: true });
-      // 过滤掉无效的经纬度数据
-      this.points = parsed.data.filter(p => 
-        p.Latitude != null && p.Longitude != null && 
-        p['Altitude(m)'] != null &&
-        !isNaN(p.Latitude) && !isNaN(p.Longitude) && !isNaN(p['Altitude(m)']) &&
-        p.Latitude >= -90 && p.Latitude <= 90 &&
-        p.Longitude >= -180 && p.Longitude <= 180 &&
-        p['Altitude(m)'] >= 0
-      );
-      this.pointsConverted = false;
+      if (!this.selectedDir || !this.selectedFiles.length) {
+        this.flightTracks = [];
+        this.points = [];
+        this.clearTrackLayers();
+        this.clearFlightMarkers();
+        this.initChart();
+        return;
+      }
+
+      const uniqueFiles = [...new Set(this.selectedFiles)];
+      this.selectedFiles = uniqueFiles;
+      const tracks = await Promise.all(uniqueFiles.map(async fileName => {
+        const points = await this.fetchTrackPoints(fileName);
+        return { name: fileName, points };
+      }));
+
+      this.flightTracks = tracks.filter(track => track.points.length > 0);
+      this.points = this.flightTracks[0]?.points || [];
       this.currentIndex = 0;
       if (this.points.length > 0) {
         try {
@@ -295,26 +326,50 @@ export default {
           console.error('AMap 加载失败:', err);
           alert('地图脚本加载失败，请检查网络或 API Key。');
         }
-        this.initChart();
       } else {
+        this.clearFlightMarkers();
         alert('没有有效的轨迹数据');
       }
+      this.initChart();
+    },
+    async fetchTrackPoints(fileName) {
+      const res = await axios.get('/api/logs/file', {
+        params: { dir: this.selectedDir, name: fileName }
+      });
+      const text = res.data;
+      const parsed = Papa.parse(text, { header: true, dynamicTyping: true });
+      const validPoints = parsed.data.filter(p =>
+        p.Latitude != null && p.Longitude != null &&
+        p['Altitude(m)'] != null &&
+        !isNaN(p.Latitude) && !isNaN(p.Longitude) && !isNaN(p['Altitude(m)']) &&
+        p.Latitude >= -90 && p.Latitude <= 90 &&
+        p.Longitude >= -180 && p.Longitude <= 180 &&
+        p['Altitude(m)'] >= 0
+      );
+      return validPoints.map(p => {
+        const [lat, lon] = this.wgs84ToGcj02(p.Latitude, p.Longitude);
+        return {
+          ...p,
+          Latitude: lat,
+          Longitude: lon
+        };
+      });
     },
     async downloadCurrentCsv() {
-      if (!this.selectedDir || !this.selectedFile) {
+      if (!this.selectedDir || !this.primarySelectedFile) {
         alert('请先选择日期目录和飞行记录');
         return;
       }
       try {
         const res = await axios.get('/api/logs/file', {
-          params: { dir: this.selectedDir, name: this.selectedFile },
+          params: { dir: this.selectedDir, name: this.primarySelectedFile },
           responseType: 'blob'
         });
         const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = this.selectedFile;
+        link.download = this.primarySelectedFile;
         document.body.appendChild(link);
         link.click();
         link.remove();
@@ -412,21 +467,9 @@ export default {
         return;
       }
 
-      // 转换为高德 GCJ02 坐标
-      if (!this.pointsConverted) {
-        const convertedPoints = this.points.map(p => {
-          const [lat, lon] = this.wgs84ToGcj02(p.Latitude, p.Longitude);
-          return {
-            ...p,
-            Latitude: lat,
-            Longitude: lon
-          };
-        });
-        this.points = convertedPoints;
-        this.pointsConverted = true;
-      }
-
-      const path = this.points.map(p => [p.Longitude, p.Latitude]);
+      const activeTrack = this.flightTracks[0]?.points?.length ? this.flightTracks[0].points : this.points;
+      this.points = activeTrack;
+      const path = activeTrack.map(p => [p.Longitude, p.Latitude]);
       const currentPoint = this.getCurrentTrackPoint() || this.points[0];
       const currentPosition = this.getPointPosition(currentPoint) || path[0];
       const preserveViewport = !options.resetViewport;
@@ -452,64 +495,71 @@ export default {
 
       this.clearTrackLayers();
 
-      const segments = [];
-      for (let i = 0; i < this.points.length - 1; i += 1) {
-        const p1 = this.points[i];
-        const p2 = this.points[i + 1];
-        segments.push({
-          coordinates: [
-            [p1.Longitude, p1.Latitude, p1['Altitude(m)']],
-            [p2.Longitude, p2.Latitude, p2['Altitude(m)']]
-          ],
-          metric: this.getMetricValue(p1, this.selectedMetric)
-        });
-      }
-
       const hasLoca = window.AMap && window.Loca && typeof window.Loca.Container === 'function';
       if (hasLoca) {
         if (!this.locaContainer) {
           this.locaContainer = new Loca.Container({ map: this.map });
         }
-        const source = new Loca.GeoJSONSource({
-          data: {
-            type: 'FeatureCollection',
-            features: segments.map(seg => ({
-              type: 'Feature',
-              geometry: {
-                type: 'LineString',
-                coordinates: seg.coordinates
-              },
-              properties: {
-                metric: seg.metric
-              }
-            }))
-          }
-        });
-        this.locaLineLayer = new Loca.LineLayer({
-          zIndex: 30,
-          lineWidth: 3,
-          opacity: 0.8
-        });
-        this.locaLineLayer.setSource(source, {
-          height: (index, feature) => feature.geometry.coordinates[index][2],
-          color: (index, feature) => this.getMetricColor(this.selectedMetric, feature.properties.metric)
-        });
-        this.locaContainer.add(this.locaLineLayer);
-      } else {
-        segments.forEach(seg => {
-          const polyline = new AMap.Polyline({
-            path: seg.coordinates,
-            enableAltitude: true,
-            strokeColor: this.getMetricColor(this.selectedMetric, seg.metric),
-            strokeWeight: 4,
-            showDir: false,
-            geodesic: true,
-            opacity: 0.9
-          });
-          polyline.setMap(this.map);
-          this.segmentLines.push(polyline);
-        });
       }
+
+      this.flightTracks.forEach(track => {
+        const segments = [];
+        for (let i = 0; i < track.points.length - 1; i += 1) {
+          const p1 = track.points[i];
+          const p2 = track.points[i + 1];
+          segments.push({
+            coordinates: [
+              [p1.Longitude, p1.Latitude, p1['Altitude(m)']],
+              [p2.Longitude, p2.Latitude, p2['Altitude(m)']]
+            ],
+            metric: this.getMetricValue(p1, this.selectedMetric)
+          });
+        }
+
+        if (hasLoca) {
+          const source = new Loca.GeoJSONSource({
+            data: {
+              type: 'FeatureCollection',
+              features: segments.map(seg => ({
+                type: 'Feature',
+                geometry: {
+                  type: 'LineString',
+                  coordinates: seg.coordinates
+                },
+                properties: {
+                  metric: seg.metric
+                }
+              }))
+            }
+          });
+          const lineLayer = new Loca.LineLayer({
+            zIndex: 30,
+            lineWidth: 3,
+            opacity: 0.8
+          });
+          lineLayer.setSource(source, {
+            height: (index, feature) => feature.geometry.coordinates[index][2],
+            color: (index, feature) => this.getMetricColor(this.selectedMetric, feature.properties.metric)
+          });
+          this.locaContainer.add(lineLayer);
+          this.trackLayers.push(lineLayer);
+        } else {
+          segments.forEach(seg => {
+            const polyline = new AMap.Polyline({
+              path: seg.coordinates,
+              enableAltitude: true,
+              strokeColor: this.getMetricColor(this.selectedMetric, seg.metric),
+              strokeWeight: 4,
+              showDir: false,
+              geodesic: true,
+              opacity: 0.9
+            });
+            polyline.setMap(this.map);
+            this.segmentLines.push(polyline);
+            this.trackLayers.push(polyline);
+          });
+        }
+      });
 
       if (this.altitudeLabels && this.altitudeLabels.length > 0) {
         this.altitudeLabels.forEach(label => label.setMap(null));
@@ -723,23 +773,42 @@ export default {
       return '#cbd5e1';
     },
     clearTrackLayers() {
+      if (this.trackLayers && this.trackLayers.length) {
+        this.trackLayers.forEach(layer => {
+          if (!layer) return;
+          if (typeof layer.setMap === 'function') {
+            layer.setMap(null);
+          }
+          if (typeof layer.clear === 'function') {
+            layer.clear();
+          }
+        });
+        this.trackLayers = [];
+      }
       if (this.segmentLines && this.segmentLines.length) {
         this.segmentLines.forEach(line => line.setMap(null));
         this.segmentLines = [];
-      }
-      if (this.locaLineLayer) {
-        if (typeof this.locaLineLayer.setMap === 'function') {
-          this.locaLineLayer.setMap(null);
-        }
-        if (typeof this.locaLineLayer.clear === 'function') {
-          this.locaLineLayer.clear();
-        }
-        this.locaLineLayer = null;
       }
       if (this.locaContainer && typeof this.locaContainer.clear === 'function') {
         this.locaContainer.clear();
       }
       this.clearChangeMarkers();
+    },
+    clearFlightMarkers() {
+      if (this.marker && typeof this.marker.setMap === 'function') {
+        this.marker.setMap(null);
+      }
+      this.marker = null;
+      if (this.altitudeMarker && typeof this.altitudeMarker.setMap === 'function') {
+        this.altitudeMarker.setMap(null);
+      }
+      this.altitudeMarker = null;
+      if (this.mapViewSyncHandler && this.map && typeof this.map.off === 'function') {
+        this.map.off('moveend', this.mapViewSyncHandler);
+        this.map.off('rotate', this.mapViewSyncHandler);
+        this.map.off('zoomchange', this.mapViewSyncHandler);
+      }
+      this.mapViewSyncHandler = null;
     },
     clearChangeMarkers() {
       const removeMarkers = markers => {
@@ -751,8 +820,7 @@ export default {
         });
         return [];
       };
-      this.cellIdMarkers = removeMarkers(this.cellIdMarkers);
-      this.pciMarkers = removeMarkers(this.pciMarkers);
+      this.siteMarkers = removeMarkers(this.siteMarkers);
     },
     createChangeMarker(position, text, variant, compact = false) {
       if (!window.AMap || !position) return null;
@@ -780,16 +848,17 @@ export default {
       if (value === null || value === undefined || value === '') return '';
       return String(value).trim();
     },
-    getFieldChangePoints(fieldName) {
+    getFieldChangePoints(points, fieldName) {
+      const trackPoints = Array.isArray(points) ? points : this.points;
       const markers = [];
-      for (let i = 1; i < this.points.length; i += 1) {
-        const prevValue = this.points[i - 1]?.[fieldName];
-        const currentValue = this.points[i]?.[fieldName];
+      for (let i = 1; i < trackPoints.length; i += 1) {
+        const prevValue = trackPoints[i - 1]?.[fieldName];
+        const currentValue = trackPoints[i]?.[fieldName];
         const prevNormalized = this.normalizeComparableValue(prevValue);
         const currentNormalized = this.normalizeComparableValue(currentValue);
         if (!prevNormalized || !currentNormalized || prevNormalized === currentNormalized) continue;
         markers.push({
-          position: [this.points[i].Longitude, this.points[i].Latitude, this.points[i]['Altitude(m)']],
+          position: [trackPoints[i].Longitude, trackPoints[i].Latitude, trackPoints[i]['Altitude(m)']],
           value: currentValue
         });
       }
@@ -797,24 +866,55 @@ export default {
     },
     renderChangeMarkers() {
       this.clearChangeMarkers();
-      if (!this.map || !this.points.length) return;
+      if (!this.map || !this.flightTracks.length) return;
 
-      const cellIdChanges = this.getFieldChangePoints('Cell_ID');
-      const pciChanges = this.getFieldChangePoints('PCI');
+      const markers = [];
+      this.flightTracks.forEach(track => {
+        const points = Array.isArray(track.points) ? track.points : [];
+        if (points.length < 2) return;
 
-      this.cellIdMarkers = cellIdChanges.map(change => this.createChangeMarker(
-        change.position,
-        `Cell_ID: ${change.value}`,
-        'cell-id-marker',
-        !this.showChangeMarkers
-      )).filter(Boolean);
+        const cellIdChanges = this.getFieldChangePoints(points, 'Cell_ID');
+        const pciChanges = this.getFieldChangePoints(points, 'PCI');
+        const changeMap = new Map();
 
-      this.pciMarkers = pciChanges.map(change => this.createChangeMarker(
-        change.position,
-        `PCI: ${change.value}`,
-        'pci-marker',
-        !this.showChangeMarkers
-      )).filter(Boolean);
+        cellIdChanges.forEach(change => {
+          const key = `${change.position[0]}_${change.position[1]}_${change.position[2]}`;
+          changeMap.set(key, {
+            position: change.position,
+            cellId: change.value,
+            pci: null
+          });
+        });
+
+        pciChanges.forEach(change => {
+          const key = `${change.position[0]}_${change.position[1]}_${change.position[2]}`;
+          const existing = changeMap.get(key);
+          if (existing) {
+            existing.pci = change.value;
+          } else {
+            changeMap.set(key, {
+              position: change.position,
+              cellId: null,
+              pci: change.value
+            });
+          }
+        });
+
+        changeMap.forEach(change => {
+          const siteText = [
+            change.cellId ? `Cell_ID: ${change.cellId}` : null,
+            change.pci ? `PCI: ${change.pci}` : null
+          ].filter(Boolean).join(' / ') || '站点信息';
+          markers.push(this.createChangeMarker(
+            change.position,
+            siteText,
+            'site-marker',
+            !this.showChangeMarkers
+          ));
+        });
+      });
+
+      this.siteMarkers = markers.filter(Boolean);
     },
     formatLegendValue(name, value) {
       if (value === null || value === undefined || Number.isNaN(value)) return '-';
@@ -1130,6 +1230,9 @@ export default {
     },
     toggleMetricInfoCollapsed(nextState) {
       this.metricInfoCollapsed = nextState;
+    },
+    toggleFlightLogCollapsed(nextState) {
+      this.flightLogCollapsed = nextState;
     }
   },
   watch: {
@@ -1137,7 +1240,7 @@ export default {
       this.initChart();
     },
     selectedMetric() {
-      if (this.points.length > 0) {
+      if (this.flightTracks.length > 0) {
         this.drawTrack({ resetViewport: false });
       }
     },
@@ -1278,6 +1381,49 @@ export default {
   color: #f8fafc;
   border-color: rgba(148, 163, 184, 0.25);
 }
+.flight-log-panel-shell {
+  position: absolute;
+  top: 108px;
+  left: 14px;
+  z-index: 36;
+  display: flex;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+.flight-log-panel-shell.collapsed {
+  width: 56px;
+}
+.flight-log-panel-shell .flight-log-panel {
+  width: min(290px, calc(100vw - 28px));
+}
+.flight-log-panel-shell .flight-log-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.flight-log-tip {
+  font-size: 12px;
+  line-height: 1.4;
+  color: inherit;
+  opacity: 0.82;
+}
+.flight-log-panel-shell select[multiple] {
+  width: 100%;
+  min-height: 240px;
+  max-height: 40vh;
+  padding: 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(248, 250, 252, 0.96);
+  color: inherit;
+}
+.app-container.night .flight-log-panel-shell select[multiple] {
+  background: rgba(8, 15, 33, 0.96);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+.flight-log-panel-shell select[multiple] option {
+  padding: 6px 8px;
+}
 .map-stage {
   position: relative;
   flex: 1;
@@ -1312,6 +1458,9 @@ export default {
   display: flex;
   justify-content: flex-end;
   pointer-events: auto;
+}
+.flight-log-panel-shell.panel-shell {
+  max-width: min(290px, calc(100vw - 28px));
 }
 .panel-shell.collapsed {
   width: 56px;
@@ -1513,6 +1662,9 @@ export default {
   border-color: rgba(148, 163, 184, 0.2);
 }
 @media (max-width: 1200px) {
+  .flight-log-panel-shell {
+    top: 168px;
+  }
   .right-panel-group {
     top: 168px;
     width: fit-content;
@@ -1530,6 +1682,10 @@ export default {
     top: 10px;
     left: 10px;
     right: 10px;
+  }
+  .flight-log-panel-shell {
+    top: 150px;
+    left: 10px;
   }
   .toolbar-title {
     font-size: 13px;
@@ -1636,5 +1792,12 @@ body {
 .change-marker.pci-marker {
   color: #1d4ed8;
   background: rgba(191, 219, 254, 0.96);
+}
+.change-marker.site-marker {
+  color: #0f766e;
+  background: rgba(204, 251, 241, 0.96);
+}
+.change-marker.site-marker .change-marker-dot {
+  background: #14b8a6;
 }
 </style>
