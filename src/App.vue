@@ -246,7 +246,7 @@ export default {
       const points = this.points || [];
       if (!points.length) return '';
       const stats = this.getFlightStatistics(points);
-      return `Cell_ID切换: ${stats.cellIdSwitches} 次\nPCI切换: ${stats.pciSwitches} 次`;
+      return `扇区 (CELL) 切换: ${stats.cellIdSwitches} 次 \n 基站 ( PCI ) 切换: ${stats.pciSwitches} 次`;
     },
     activeRealtimeTabLabel() {
       return this.activeRealtimeTab === 'stats' ? '统计信息' : '实时信息';
