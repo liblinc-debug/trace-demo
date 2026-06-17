@@ -70,19 +70,47 @@
             class="panel-collapse-handle"
             @click="toggleRealtimeInfoCollapsed(false)"
           >
-            展开实时信息
+            展开{{ activeRealtimeTabLabel }}
           </button>
           <div v-else class="panel realtime-info-panel" :class="themeMode">
             <div class="panel-header">
-              <div>实时信息</div>
+              <div class="panel-tabs">
+                <button
+                  type="button"
+                  class="panel-tab"
+                  :class="{ active: activeRealtimeTab === 'realtime' }"
+                  @click="setRealtimeTab('realtime')"
+                >
+                  实时信息
+                </button>
+                <button
+                  type="button"
+                  class="panel-tab"
+                  :class="{ active: activeRealtimeTab === 'stats' }"
+                  @click="setRealtimeTab('stats')"
+                >
+                  统计信息
+                </button>
+              </div>
               <button type="button" @click="toggleRealtimeInfoCollapsed(true)">收起</button>
             </div>
-            <div class="panel-body">
+            <div class="panel-body" v-if="activeRealtimeTab === 'realtime'">
               <div class="info-grid">
                 <div v-for="row in realtimeRows" :key="row.label" class="info-row">
                   <span class="info-label">{{ row.label }}</span>
                   <span class="info-value">{{ row.value }}</span>
                 </div>
+              </div>
+            </div>
+            <div class="panel-body stats-body" v-else>
+              <div class="info-grid stats-grid">
+                <div v-for="row in flightStatsRows" :key="row.label" class="info-row">
+                  <span class="info-label">{{ row.label }}</span>
+                  <span class="info-value">{{ row.value }}</span>
+                </div>
+              </div>
+              <div class="switch-summary" v-if="flightSwitchSummary">
+                {{ flightSwitchSummary }}
               </div>
             </div>
           </div>
@@ -162,6 +190,7 @@ export default {
         { value: 'day', label: '白天' },
         { value: 'night', label: '黑夜' }
       ],
+      activeRealtimeTab: 'realtime',
       selectedMetric: 'Signal_dBm',
       metricOptions: [
         { value: 'Signal_dBm', label: 'Signal_dBm' },
@@ -196,8 +225,31 @@ export default {
       if (!this.activePoint) return [];
       return this.realtimeFields.map(field => ({
         label: field,
-        value: this.formatRealtimeValue(field, this.activePoint[field])
+        value: this.formatRealtimeValue(field, this.getRealtimeFieldValue(this.activePoint, field))
       }));
+    },
+    flightStatsRows() {
+      const points = this.points || [];
+      if (!points.length) return [];
+      const stats = this.getFlightStatistics(points);
+      return [
+        { label: '开始时间', value: stats.startTime },
+        { label: '结束时间', value: stats.endTime },
+        { label: '飞行时长', value: stats.duration },
+        { label: '飞行里程', value: stats.flightDistance },
+        { label: '最大高度', value: stats.maxAltitude },
+        { label: '最远距离', value: stats.maxDistance },
+        { label: '数据总量', value: stats.totalCount }
+      ];
+    },
+    flightSwitchSummary() {
+      const points = this.points || [];
+      if (!points.length) return '';
+      const stats = this.getFlightStatistics(points);
+      return `Cell_ID切换: ${stats.cellIdSwitches} 次\nPCI切换: ${stats.pciSwitches} 次`;
+    },
+    activeRealtimeTabLabel() {
+      return this.activeRealtimeTab === 'stats' ? '统计信息' : '实时信息';
     },
     metricDescriptionHtml() {
       const meta = {
@@ -822,13 +874,13 @@ export default {
       };
       this.siteMarkers = removeMarkers(this.siteMarkers);
     },
-    createChangeMarker(position, text, variant, compact = false) {
+    createChangeMarker(position, text, variant, compact = false, offset = [0, 0]) {
       if (!window.AMap || !position) return null;
       const marker = new AMap.Marker({
         position,
         content: compact
           ? `
-          <div class="change-marker-dot-only">
+          <div class="change-marker-dot-only ${variant}">
             <span class="change-marker-dot"></span>
           </div>
         `
@@ -838,7 +890,7 @@ export default {
             <span class="change-marker-text">${text}</span>
           </div>
         `,
-        offset: new AMap.Pixel(-10, -10),
+        offset: new AMap.Pixel(offset[0], offset[1]),
         zIndex: 1000
       });
       marker.setMap(this.map);
@@ -852,8 +904,8 @@ export default {
       const trackPoints = Array.isArray(points) ? points : this.points;
       const markers = [];
       for (let i = 1; i < trackPoints.length; i += 1) {
-        const prevValue = trackPoints[i - 1]?.[fieldName];
-        const currentValue = trackPoints[i]?.[fieldName];
+        const prevValue = this.getRealtimeFieldValue(trackPoints[i - 1], fieldName);
+        const currentValue = this.getRealtimeFieldValue(trackPoints[i], fieldName);
         const prevNormalized = this.normalizeComparableValue(prevValue);
         const currentNormalized = this.normalizeComparableValue(currentValue);
         if (!prevNormalized || !currentNormalized || prevNormalized === currentNormalized) continue;
@@ -875,41 +927,23 @@ export default {
 
         const cellIdChanges = this.getFieldChangePoints(points, 'Cell_ID');
         const pciChanges = this.getFieldChangePoints(points, 'PCI');
-        const changeMap = new Map();
-
         cellIdChanges.forEach(change => {
-          const key = `${change.position[0]}_${change.position[1]}_${change.position[2]}`;
-          changeMap.set(key, {
-            position: change.position,
-            cellId: change.value,
-            pci: null
-          });
+          markers.push(this.createChangeMarker(
+            change.position,
+            `Cell_ID: ${this.formatCodeValue(change.value)}`,
+            'cell-id-marker',
+            !this.showChangeMarkers,
+            [0, -18]
+          ));
         });
 
         pciChanges.forEach(change => {
-          const key = `${change.position[0]}_${change.position[1]}_${change.position[2]}`;
-          const existing = changeMap.get(key);
-          if (existing) {
-            existing.pci = change.value;
-          } else {
-            changeMap.set(key, {
-              position: change.position,
-              cellId: null,
-              pci: change.value
-            });
-          }
-        });
-
-        changeMap.forEach(change => {
-          const siteText = [
-            change.cellId ? `Cell_ID: ${change.cellId}` : null,
-            change.pci ? `PCI: ${change.pci}` : null
-          ].filter(Boolean).join(' / ') || '站点信息';
           markers.push(this.createChangeMarker(
             change.position,
-            siteText,
-            'site-marker',
-            !this.showChangeMarkers
+            `PCI: ${this.formatCodeValue(change.value)}`,
+            'pci-marker',
+            !this.showChangeMarkers,
+            [0, 18]
           ));
         });
       });
@@ -928,6 +962,9 @@ export default {
     },
     formatRealtimeValue(field, value) {
       if (value === null || value === undefined || value === '') return '-';
+      if (field === 'Cell_ID' || field === 'PCI') {
+        return this.formatCodeValue(value);
+      }
       const numeric = Number(value);
       if (Number.isFinite(numeric)) {
         if (['Latitude', 'Longitude'].includes(field)) {
@@ -939,6 +976,184 @@ export default {
         return numeric.toFixed(1);
       }
       return String(value);
+    },
+    getRealtimeFieldValue(point, field) {
+      const aliases = {
+        Timestamp: ['timestamp', 'Time', 'time'],
+        Latitude: ['lat', 'Lat'],
+        Longitude: ['lon', 'Lng', 'lng', 'Lon'],
+        'Altitude(m)': ['Altitude', 'altitude', 'Altitude_m'],
+        'Speed(m/s)': ['Speed', 'speed'],
+        'Climb(m/s)': ['Climb', 'climb'],
+        'Heading(deg)': ['Heading', 'heading'],
+        'Loss_Rate(%)': ['LossRate', 'HB_Loss_Rate(%)'],
+        'Avg_Ping(ms)': ['Avg_Ping', 'Ping', 'avg_ping'],
+        'Dist_to_Arm_Pt(m)': ['Dist', 'Distance_to_Arm_Pt(m)'],
+        'Flight_Dist(m)': ['FlightDist', 'Flight_Distance(m)'],
+        'WP_Speed(m/s)': ['WP_Speed'],
+        'WP_Radius(m)': ['WP_Radius'],
+        'WP_Accel(m/s2)': ['WP_Accel'],
+        Network: ['network'],
+        Band: ['band'],
+        Cell_ID: ['CellID', 'cell_id', 'cellId', 'cellid'],
+        PCI: ['pci', 'Pci'],
+        Signal_dBm: ['Signal', 'signal_dBm'],
+        RSRP: ['rsrp'],
+        RSRQ: ['rsrq'],
+        SNR: ['snr'],
+        RSSI: ['rssi'],
+        'Jitter(ms)': ['Jitter', 'jitter']
+      };
+      return this.getFieldWithAliases(point, field, aliases[field] || []);
+    },
+    getFieldWithAliases(point, field, extraAliases = []) {
+      if (!point) return null;
+      const keys = [field, ...extraAliases];
+      for (const key of keys) {
+        if (!Object.prototype.hasOwnProperty.call(point, key)) continue;
+        const value = point[key];
+        if (value !== null && value !== undefined && value !== '') {
+          return value;
+        }
+      }
+      return null;
+    },
+    formatCodeValue(value) {
+      if (value === null || value === undefined || value === '') return '-';
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        return `${Math.trunc(value)}`;
+      }
+      return String(value).trim();
+    },
+    formatTimestampDisplay(value) {
+      if (value === null || value === undefined || value === '') return '-';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return String(value);
+      }
+      const pad = num => `${num}`.padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    },
+    formatDuration(seconds) {
+      if (!Number.isFinite(seconds) || seconds < 0) return '-';
+      const total = Math.round(seconds);
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const secs = total % 60;
+      const parts = [];
+      if (hours > 0) parts.push(`${hours} 小时`);
+      if (minutes > 0 || hours > 0) parts.push(`${minutes} 分`);
+      parts.push(`${secs} 秒`);
+      return parts.join(' ');
+    },
+    formatMeters(value) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) return '-';
+      return `${numeric.toFixed(1)} m`;
+    },
+    getTimestampMs(point) {
+      if (!point) return null;
+      const value = this.getRealtimeFieldValue(point, 'Timestamp');
+      if (value === null || value === undefined || value === '') return null;
+      const date = new Date(value);
+      if (!Number.isNaN(date.getTime())) {
+        return date.getTime();
+      }
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) {
+        return numeric;
+      }
+      return null;
+    },
+    getPointCoordinates(point) {
+      if (!point) return null;
+      const lat = Number(this.getRealtimeFieldValue(point, 'Latitude'));
+      const lon = Number(this.getRealtimeFieldValue(point, 'Longitude'));
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return { lat, lon };
+    },
+    getGroundDistanceMeters(pointA, pointB) {
+      const a = this.getPointCoordinates(pointA);
+      const b = this.getPointCoordinates(pointB);
+      if (!a || !b) return null;
+      const toRad = deg => (deg * Math.PI) / 180;
+      const earthRadius = 6371000;
+      const dLat = toRad(b.lat - a.lat);
+      const dLon = toRad(b.lon - a.lon);
+      const lat1 = toRad(a.lat);
+      const lat2 = toRad(b.lat);
+      const sinLat = Math.sin(dLat / 2);
+      const sinLon = Math.sin(dLon / 2);
+      const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon;
+      return 2 * earthRadius * Math.asin(Math.min(1, Math.sqrt(h)));
+    },
+    getFlightStatistics(points) {
+      const validPoints = Array.isArray(points) ? points.filter(Boolean) : [];
+      if (!validPoints.length) {
+        return {
+          startTime: '-',
+          endTime: '-',
+          duration: '-',
+          flightDistance: '-',
+          maxAltitude: '-',
+          maxDistance: '-',
+          totalCount: '0 条',
+          cellIdSwitches: 0,
+          pciSwitches: 0
+        };
+      }
+
+      const startTimestampMs = this.getTimestampMs(validPoints[0]);
+      const endTimestampMs = this.getTimestampMs(validPoints[validPoints.length - 1]);
+      const altitudeValues = validPoints
+        .map(point => Number(this.getRealtimeFieldValue(point, 'Altitude(m)')))
+        .filter(value => Number.isFinite(value));
+      let flightDistance = 0;
+      let farthestDistance = 0;
+      const takeoffPoint = validPoints[0];
+      for (let i = 1; i < validPoints.length; i += 1) {
+        const segmentDistance = this.getGroundDistanceMeters(validPoints[i - 1], validPoints[i]);
+        if (Number.isFinite(segmentDistance)) {
+          flightDistance += segmentDistance;
+        }
+      }
+      validPoints.forEach(point => {
+        const dist = this.getGroundDistanceMeters(takeoffPoint, point);
+        if (Number.isFinite(dist) && dist > farthestDistance) {
+          farthestDistance = dist;
+        }
+      });
+
+      let cellIdSwitches = 0;
+      let pciSwitches = 0;
+      let prevCell = this.normalizeComparableValue(this.getRealtimeFieldValue(validPoints[0], 'Cell_ID'));
+      let prevPci = this.normalizeComparableValue(this.getRealtimeFieldValue(validPoints[0], 'PCI'));
+      for (let i = 1; i < validPoints.length; i += 1) {
+        const currentCell = this.normalizeComparableValue(this.getRealtimeFieldValue(validPoints[i], 'Cell_ID'));
+        const currentPci = this.normalizeComparableValue(this.getRealtimeFieldValue(validPoints[i], 'PCI'));
+        if (prevCell && currentCell && prevCell !== currentCell) {
+          cellIdSwitches += 1;
+        }
+        if (prevPci && currentPci && prevPci !== currentPci) {
+          pciSwitches += 1;
+        }
+        if (currentCell) prevCell = currentCell;
+        if (currentPci) prevPci = currentPci;
+      }
+
+      return {
+        startTime: this.formatTimestampDisplay(validPoints[0] ? this.getRealtimeFieldValue(validPoints[0], 'Timestamp') : null),
+        endTime: this.formatTimestampDisplay(validPoints[validPoints.length - 1] ? this.getRealtimeFieldValue(validPoints[validPoints.length - 1], 'Timestamp') : null),
+        duration: startTimestampMs !== null && endTimestampMs !== null
+          ? this.formatDuration(Math.max(0, (endTimestampMs - startTimestampMs) / 1000))
+          : '-',
+        flightDistance: this.formatMeters(flightDistance),
+        maxAltitude: this.formatMeters(altitudeValues.length ? Math.max(...altitudeValues) : null),
+        maxDistance: this.formatMeters(farthestDistance),
+        totalCount: `${validPoints.length} 条`,
+        cellIdSwitches,
+        pciSwitches
+      };
     },
     getThemeColors() {
       if (this.themeMode === 'night') {
@@ -1136,7 +1351,7 @@ export default {
         },
         xAxis: {
           type: 'category',
-          data: this.points.map(point => point.Timestamp),
+          data: this.points.map(point => this.getRealtimeFieldValue(point, 'Timestamp')),
           axisLine: { lineStyle: { color: theme.axisColor } },
           axisLabel: { color: theme.axisColor },
           splitLine: { lineStyle: { color: theme.gridColor } }
@@ -1227,6 +1442,9 @@ export default {
     },
     toggleRealtimeInfoCollapsed(nextState) {
       this.realtimeInfoCollapsed = nextState;
+    },
+    setRealtimeTab(tab) {
+      this.activeRealtimeTab = tab;
     },
     toggleMetricInfoCollapsed(nextState) {
       this.metricInfoCollapsed = nextState;
@@ -1493,10 +1711,45 @@ export default {
   font-size: 13px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 }
+.panel-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.panel-tab {
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.45);
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 10px;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.panel-tab.active {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: rgba(56, 189, 248, 0.38);
+  color: #0284c7;
+}
+.app-container.night .panel-tab {
+  background: rgba(15, 23, 42, 0.65);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+.app-container.night .panel-tab.active {
+  background: rgba(14, 165, 233, 0.2);
+  color: #7dd3fc;
+}
 .panel-body {
   padding: 10px 12px;
   overflow: auto;
   max-height: 280px;
+}
+.stats-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .metric-description p,
 .metric-description ul {
@@ -1576,6 +1829,19 @@ export default {
 }
 .info-value {
   word-break: break-word;
+}
+.switch-summary {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px dashed rgba(56, 189, 248, 0.28);
+  white-space: pre-line;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.app-container.night .switch-summary {
+  background: rgba(8, 47, 73, 0.4);
+  border-color: rgba(125, 211, 252, 0.24);
 }
 .chart-shell {
   position: absolute;
@@ -1785,19 +2051,32 @@ body {
   border: 1px solid rgba(125, 211, 252, 0.8);
   /* box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18); */
 }
-.change-marker.cell-id-marker {
-  color: #7dd3fc;
+.change-marker-dot-only.cell-id-marker {
   background: rgba(224, 242, 254, 0.96);
+  border-color: rgba(125, 211, 252, 0.8);
+}
+.change-marker-dot-only.cell-id-marker .change-marker-dot {
+  background: #38bdf8;
+}
+.change-marker-dot-only.pci-marker {
+  background: rgba(191, 219, 254, 0.96);
+  border-color: rgba(59, 130, 246, 0.8);
+}
+.change-marker-dot-only.pci-marker .change-marker-dot {
+  background: #1d4ed8;
+}
+.change-marker.cell-id-marker {
+  color: #0284c7;
+  background: rgba(224, 242, 254, 0.96);
+}
+.change-marker.cell-id-marker .change-marker-dot {
+  background: #38bdf8;
 }
 .change-marker.pci-marker {
   color: #1d4ed8;
   background: rgba(191, 219, 254, 0.96);
 }
-.change-marker.site-marker {
-  color: #0f766e;
-  background: rgba(204, 251, 241, 0.96);
-}
-.change-marker.site-marker .change-marker-dot {
-  background: #14b8a6;
+.change-marker.pci-marker .change-marker-dot {
+  background: #1d4ed8;
 }
 </style>
