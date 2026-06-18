@@ -31,7 +31,7 @@
             <option value="" disabled>请选择日期目录...</option>
             <option v-for="d in dirs" :key="d" :value="d">{{ d }}</option>
           </select>
-          <button type="button" @click="downloadCurrentCsv" :disabled="!selectedDir || !primarySelectedFile">
+          <button type="button" @click="downloadCurrentZip" :disabled="!selectedDir">
             下载
           </button>
           <label class="control-label metric-select">
@@ -238,9 +238,11 @@ export default {
         { label: '最大高度', value: stats.maxAltitude },
         { label: '最远距离', value: stats.maxDistance },
         { label: '数据总量', value: stats.totalCount },
+        { label: '扇区(CELL)数量', value: `${stats.cellIdSiteCount} 个` },
+        { label: '基站(PCI)数量', value: `${stats.pciSiteCount} 个` },
         { label: '扇区(CELL)切换', value: `${stats.cellIdSwitches} 次` },
-        { label: '基站(PCI)切换', value: `${stats.pciSwitches} 次` },
-        { label: '总切换次数', value: `${stats.totalSwitches} 次` }
+        { label: '基站(PCI)切换', value: `${stats.pciSwitches} 次` }
+        //,{ label: '总切换次数', value: `${stats.totalSwitches} 次` }
       ];
     },
     activeRealtimeTabLabel() {
@@ -402,28 +404,28 @@ export default {
         };
       });
     },
-    async downloadCurrentCsv() {
-      if (!this.selectedDir || !this.primarySelectedFile) {
-        alert('请先选择日期目录和飞行记录');
+    async downloadCurrentZip() {
+      if (!this.selectedDir) {
+        alert('请先选择日期目录');
         return;
       }
       try {
-        const res = await axios.get('/api/logs/file', {
-          params: { dir: this.selectedDir, name: this.primarySelectedFile },
+        const res = await axios.get('/api/logs/zip', {
+          params: { dir: this.selectedDir },
           responseType: 'blob'
         });
-        const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+        const blob = new Blob([res.data], { type: 'application/zip' });
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = this.primarySelectedFile;
+        link.download = `${this.selectedDir}.zip`;
         document.body.appendChild(link);
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
       } catch (err) {
-        console.error('CSV 下载失败:', err);
-        alert('CSV 下载失败，请稍后重试');
+        console.error('ZIP 下载失败:', err);
+        alert('ZIP 下载失败，请稍后重试');
       }
     },
     loadAMapScript() {
@@ -1095,6 +1097,8 @@ export default {
           maxAltitude: '-',
           maxDistance: '-',
           totalCount: '0 条',
+          cellIdSiteCount: 0,
+          pciSiteCount: 0,
           cellIdSwitches: 0,
           pciSwitches: 0,
           totalSwitches: 0
@@ -1127,11 +1131,17 @@ export default {
 
       let cellIdSwitches = 0;
       let pciSwitches = 0;
+      const cellIdSites = new Set();
+      const pciSites = new Set();
       let prevCell = this.normalizeComparableValue(this.getRealtimeFieldValue(validPoints[0], 'Cell_ID'));
       let prevPci = this.normalizeComparableValue(this.getRealtimeFieldValue(validPoints[0], 'PCI'));
+      if (prevCell) cellIdSites.add(prevCell);
+      if (prevPci) pciSites.add(prevPci);
       for (let i = 1; i < validPoints.length; i += 1) {
         const currentCell = this.normalizeComparableValue(this.getRealtimeFieldValue(validPoints[i], 'Cell_ID'));
         const currentPci = this.normalizeComparableValue(this.getRealtimeFieldValue(validPoints[i], 'PCI'));
+        if (currentCell) cellIdSites.add(currentCell);
+        if (currentPci) pciSites.add(currentPci);
         if (prevCell && currentCell && prevCell !== currentCell) {
           cellIdSwitches += 1;
         }
@@ -1153,6 +1163,8 @@ export default {
         maxAltitude: this.formatMeters(altitudeValues.length ? Math.max(...altitudeValues) : null),
         maxDistance: this.formatMeters(farthestDistance),
         totalCount: `${validPoints.length} 条`,
+        cellIdSiteCount: cellIdSites.size,
+        pciSiteCount: pciSites.size,
         cellIdSwitches,
         pciSwitches,
         totalSwitches: cellIdSwitches + pciSwitches
