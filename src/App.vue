@@ -109,9 +109,6 @@
                   <span class="info-value">{{ row.value }}</span>
                 </div>
               </div>
-              <div class="switch-summary" v-if="flightSwitchSummary">
-                {{ flightSwitchSummary }}
-              </div>
             </div>
           </div>
         </div>
@@ -237,16 +234,14 @@ export default {
         { label: '结束时间', value: stats.endTime },
         { label: '飞行时长', value: stats.duration },
         { label: '飞行里程', value: stats.flightDistance },
+        { label: '平均速度', value: stats.averageSpeed },
         { label: '最大高度', value: stats.maxAltitude },
         { label: '最远距离', value: stats.maxDistance },
-        { label: '数据总量', value: stats.totalCount }
+        { label: '数据总量', value: stats.totalCount },
+        { label: '扇区(CELL)切换', value: `${stats.cellIdSwitches} 次` },
+        { label: '基站(PCI)切换', value: `${stats.pciSwitches} 次` },
+        { label: '总切换次数', value: `${stats.totalSwitches} 次` }
       ];
-    },
-    flightSwitchSummary() {
-      const points = this.points || [];
-      if (!points.length) return '';
-      const stats = this.getFlightStatistics(points);
-      return `扇区 (CELL) 切换: ${stats.cellIdSwitches} 次 \n 基站 ( PCI ) 切换: ${stats.pciSwitches} 次`;
     },
     activeRealtimeTabLabel() {
       return this.activeRealtimeTab === 'stats' ? '统计信息' : '实时信息';
@@ -933,7 +928,7 @@ export default {
             `Cell_ID: ${this.formatCodeValue(change.value)}`,
             'cell-id-marker',
             !this.showChangeMarkers,
-            [0, -18]
+            [0, -9]
           ));
         });
 
@@ -943,7 +938,7 @@ export default {
             `PCI: ${this.formatCodeValue(change.value)}`,
             'pci-marker',
             !this.showChangeMarkers,
-            [0, 18]
+            [0, 8]
           ));
         });
       });
@@ -954,6 +949,7 @@ export default {
       if (value === null || value === undefined || Number.isNaN(value)) return '-';
       if (name === 'Loss Rate') return `${value.toFixed(1)}%`;
       if (name === 'Ping') return `${value.toFixed(1)}ms`;
+      if (name === 'Speed(m/s)') return `${value.toFixed(1)}m/s`;
       if (name === 'Dist') return `${value.toFixed(1)}m`;
       if (name === 'Altitude') return `${value.toFixed(1)}m`;
       if (name === 'Signal_dBm') return `${value.toFixed(1)}dBm`;
@@ -1095,11 +1091,13 @@ export default {
           endTime: '-',
           duration: '-',
           flightDistance: '-',
+          averageSpeed: '-',
           maxAltitude: '-',
           maxDistance: '-',
           totalCount: '0 条',
           cellIdSwitches: 0,
-          pciSwitches: 0
+          pciSwitches: 0,
+          totalSwitches: 0
         };
       }
 
@@ -1107,6 +1105,9 @@ export default {
       const endTimestampMs = this.getTimestampMs(validPoints[validPoints.length - 1]);
       const altitudeValues = validPoints
         .map(point => Number(this.getRealtimeFieldValue(point, 'Altitude(m)')))
+        .filter(value => Number.isFinite(value));
+      const speedValues = validPoints
+        .map(point => Number(this.getRealtimeFieldValue(point, 'Speed(m/s)')))
         .filter(value => Number.isFinite(value));
       let flightDistance = 0;
       let farthestDistance = 0;
@@ -1148,11 +1149,13 @@ export default {
           ? this.formatDuration(Math.max(0, (endTimestampMs - startTimestampMs) / 1000))
           : '-',
         flightDistance: this.formatMeters(flightDistance),
+        averageSpeed: speedValues.length ? `${(speedValues.reduce((sum, value) => sum + value, 0) / speedValues.length).toFixed(1)} m/s` : '-',
         maxAltitude: this.formatMeters(altitudeValues.length ? Math.max(...altitudeValues) : null),
         maxDistance: this.formatMeters(farthestDistance),
         totalCount: `${validPoints.length} 条`,
         cellIdSwitches,
-        pciSwitches
+        pciSwitches,
+        totalSwitches: cellIdSwitches + pciSwitches
       };
     },
     getThemeColors() {
@@ -1168,6 +1171,7 @@ export default {
           tooltipBorder: 'rgba(148, 163, 184, 0.2)',
           lineLoss: '#fbbf24',
           linePing: '#22c55e',
+          lineSpeed: '#06b6d4',
           lineDist: '#38bdf8',
           lineAltitude: '#fb7185',
           lineSignal: '#a78bfa',
@@ -1185,6 +1189,7 @@ export default {
         tooltipBorder: '#d1d5db',
         lineLoss: '#f59e0b',
         linePing: '#10b981',
+        lineSpeed: '#0891b2',
         lineDist: '#0ea5e9',
         lineAltitude: '#f43f5e',
         lineSignal: '#8b5cf6',
@@ -1247,6 +1252,7 @@ export default {
       const series = [];
       const lossData = this.points.map(point => this.getMetricValue(point, 'Loss_Rate(%)', 'HB_Loss_Rate(%)'));
       const pingData = this.points.map(point => this.getMetricValue(point, 'Avg_Ping(ms)'));
+      const speedData = this.points.map(point => this.getMetricValue(point, 'Speed(m/s)', 'Speed'));
       const distData = this.points.map(point => this.getMetricValue(point, 'Dist_to_Arm_Pt(m)'));
       const altitudeData = this.points.map(point => this.getMetricValue(point, 'Altitude(m)'));
       const signalData = this.points.map(point => this.getMetricValue(point, 'Signal_dBm'));
@@ -1268,6 +1274,15 @@ export default {
           data: pingData,
           lineStyle: { color: theme.linePing },
           itemStyle: { color: theme.linePing }
+        });
+      }
+      if (speedData.some(v => v !== null)) {
+        series.push({
+          name: 'Speed(m/s)',
+          type: 'line',
+          data: speedData,
+          lineStyle: { color: theme.lineSpeed },
+          itemStyle: { color: theme.lineSpeed }
         });
       }
       if (distData.some(v => v !== null)) {
@@ -1313,7 +1328,7 @@ export default {
         this.legendValues[item.name] = '-';
       });
 
-      const visibleSeries = new Set(['Ping', 'Signal_dBm']);
+      const visibleSeries = new Set(['Ping']);
       const selected = {};
       series.forEach(item => {
         const shouldShow = visibleSeries.has(item.name);
@@ -1359,7 +1374,7 @@ export default {
         yAxis: [
           {
             type: 'value',
-            name: '% / ms / dBm',
+            name: '% / ms / dBm / m/s',
             axisLine: { lineStyle: { color: theme.axisColor } },
             axisLabel: { color: theme.axisColor },
             splitLine: { lineStyle: { color: theme.gridColor } }
@@ -1408,6 +1423,7 @@ export default {
       const legendUpdates = {
         'Loss Rate': this.getMetricValue(point, 'Loss_Rate(%)', 'HB_Loss_Rate(%)'),
         Ping: this.getMetricValue(point, 'Avg_Ping(ms)'),
+        'Speed(m/s)': this.getMetricValue(point, 'Speed(m/s)', 'Speed'),
         Dist: this.getMetricValue(point, 'Dist_to_Arm_Pt(m)'),
         Altitude: this.getMetricValue(point, 'Altitude(m)'),
         Signal_dBm: this.getMetricValue(point, 'Signal_dBm'),
@@ -2021,17 +2037,17 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 2px 6px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
   border: 1px solid rgba(255, 255, 255, 0.72);
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.2);
 }
 .change-marker-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 999px;
   background: #38bdf8;
   /* box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); */
@@ -2044,8 +2060,8 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 999px;
   background: rgba(224, 242, 254, 0.96);
   border: 1px solid rgba(125, 211, 252, 0.8);
