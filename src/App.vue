@@ -182,7 +182,7 @@ export default {
           'Loss_Rate(%)', 'Avg_Ping(ms)', 'Dist_to_Arm_Pt(m)', 'Flight_Dist(m)', 'WP_Speed(m/s)',
           'WP_Radius(m)', 'WP_Accel(m/s2)', 'Network', 'Band', 'Cell_ID', 'PCI', 'Signal_dBm', 'RSRP', 'RSRQ', 'SNR', 'RSSI', 'Jitter(ms)'
       ],
-      themeMode: 'day',
+      themeMode: 'night',
       themeOptions: [
         { value: 'day', label: '白天' },
         { value: 'night', label: '黑夜' }
@@ -1173,21 +1173,21 @@ export default {
     getThemeColors() {
       if (this.themeMode === 'night') {
         return {
-          backgroundColor: '#020817',
-          panelColor: 'rgba(2, 8, 23, 0.96)',
-          dividerColor: 'rgba(148, 163, 184, 0.2)',
-          textColor: '#f8fafc',
-          axisColor: '#cbd5e1',
-          gridColor: 'rgba(148, 163, 184, 0.2)',
-          tooltipBg: 'rgba(3, 7, 18, 0.94)',
-          tooltipBorder: 'rgba(148, 163, 184, 0.2)',
+          backgroundColor: '#0e1a2b',
+          panelColor: 'rgba(14, 26, 43, 0.96)',
+          dividerColor: '#1d3050',
+          textColor: '#dce8f7',
+          axisColor: '#8aa2c0',
+          gridColor: 'rgba(93, 116, 149, 0.22)',
+          tooltipBg: 'rgba(16, 31, 51, 0.98)',
+          tooltipBorder: '#1d3050',
           lineLoss: '#fbbf24',
-          linePing: '#22c55e',
-          lineSpeed: '#06b6d4',
-          lineDist: '#38bdf8',
-          lineAltitude: '#fb7185',
+          linePing: '#4ade80',
+          lineSpeed: '#37d5f2',
+          lineDist: '#60a5fa',
+          lineAltitude: '#f87171',
           lineSignal: '#a78bfa',
-          lineJitter: '#fde68a'
+          lineJitter: '#fb923c'
         };
       }
       return {
@@ -2019,6 +2019,365 @@ export default {
   }
   .chart-collapse-handle {
     width: 50px;
+  }
+}
+
+/* 与无人机平台门户统一的地面站视觉主题 */
+.app-container {
+  --portal-bg: #070d16;
+  --portal-panel: rgba(14, 26, 43, 0.94);
+  --portal-panel-strong: rgba(7, 13, 22, 0.92);
+  --portal-panel-soft: rgba(16, 31, 51, 0.92);
+  --portal-line: #1d3050;
+  --portal-text: #dce8f7;
+  --portal-text-dim: #8aa2c0;
+  --portal-text-faint: #5d7495;
+  --portal-accent: #37d5f2;
+  --portal-accent-soft: rgba(55, 213, 242, 0.14);
+  --portal-shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
+  background: var(--portal-bg);
+  color: var(--portal-text);
+  font-family: "PingFang SC", "Microsoft YaHei", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.app-container.day {
+  --portal-bg: #eaf2f9;
+  --portal-panel: rgba(250, 253, 255, 0.94);
+  --portal-panel-strong: rgba(241, 247, 252, 0.94);
+  --portal-panel-soft: rgba(229, 240, 248, 0.94);
+  --portal-line: rgba(45, 78, 112, 0.22);
+  --portal-text: #13243a;
+  --portal-text-dim: #526b86;
+  --portal-text-faint: #7690aa;
+  --portal-accent: #087f9f;
+  --portal-accent-soft: rgba(8, 127, 159, 0.12);
+  --portal-shadow: 0 18px 44px rgba(35, 65, 92, 0.2);
+  background: var(--portal-bg);
+  color: var(--portal-text);
+}
+
+.map-stage {
+  background: var(--portal-bg);
+}
+
+.map-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  box-shadow: inset 0 0 96px rgba(7, 13, 22, 0.2);
+}
+
+.floating-toolbar {
+  top: 14px;
+  left: 14px;
+  right: 14px;
+}
+
+.floating-toolbar .controls {
+  position: relative;
+  gap: 8px;
+  padding: 10px 12px;
+  overflow: hidden;
+  border: 1px solid var(--portal-line);
+  border-radius: 16px;
+  background: var(--portal-panel-strong);
+  box-shadow: var(--portal-shadow);
+  backdrop-filter: blur(16px) saturate(125%);
+}
+
+.floating-toolbar .controls::before,
+.panel::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--portal-accent), transparent);
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.control-label {
+  color: var(--portal-text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.controls select,
+.controls button {
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--portal-line);
+  border-radius: 9px;
+  outline: 0;
+  background: var(--portal-panel-soft);
+  color: var(--portal-text);
+  font: inherit;
+  font-size: 13px;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.controls button {
+  cursor: pointer;
+}
+
+.controls button:hover:not(:disabled),
+.controls select:hover {
+  border-color: var(--portal-accent);
+  background: var(--portal-accent-soft);
+  color: var(--portal-accent);
+}
+
+.controls button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.controls button:disabled {
+  color: var(--portal-text-faint);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.controls button:focus-visible,
+.controls select:focus-visible,
+.panel button:focus-visible,
+.panel-collapse-handle:focus-visible,
+.chart-collapse-handle:focus-visible {
+  outline: 2px solid var(--portal-accent);
+  outline-offset: 2px;
+}
+
+.control-label input[type="checkbox"] {
+  accent-color: var(--portal-accent);
+}
+
+.timeline-range {
+  height: 4px;
+  margin: 0 4px;
+  border-radius: 999px;
+  outline: none;
+  appearance: none;
+  background: linear-gradient(90deg, var(--portal-accent), var(--portal-line));
+  cursor: pointer;
+}
+
+.timeline-range::-webkit-slider-thumb {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--portal-bg);
+  border-radius: 50%;
+  appearance: none;
+  background: var(--portal-accent);
+  box-shadow: 0 0 0 3px var(--portal-accent-soft), 0 0 12px rgba(55, 213, 242, 0.55);
+}
+
+.timeline-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--portal-bg);
+  border-radius: 50%;
+  background: var(--portal-accent);
+  box-shadow: 0 0 0 3px var(--portal-accent-soft), 0 0 12px rgba(55, 213, 242, 0.55);
+}
+
+.flight-log-panel-shell,
+.right-panel-group {
+  top: 88px;
+}
+
+.flight-log-tip {
+  color: var(--portal-text-dim);
+  line-height: 1.55;
+  opacity: 1;
+}
+
+.flight-log-panel-shell select[multiple] {
+  border: 1px solid var(--portal-line);
+  border-radius: 10px;
+  outline: 0;
+  background: var(--portal-panel-strong);
+  color: var(--portal-text);
+  font-family: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+}
+
+.flight-log-panel-shell select[multiple] option {
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.flight-log-panel-shell select[multiple] option:checked {
+  background: linear-gradient(var(--portal-accent-soft), var(--portal-accent-soft));
+  color: var(--portal-accent);
+}
+
+.panel {
+  position: relative;
+  border: 1px solid var(--portal-line);
+  border-radius: 16px;
+  background: var(--portal-panel);
+  box-shadow: var(--portal-shadow);
+  backdrop-filter: blur(16px) saturate(125%);
+}
+
+.panel-header {
+  min-height: 42px;
+  padding: 8px 12px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--portal-line);
+  background: var(--portal-panel-soft);
+  color: var(--portal-text);
+  letter-spacing: 0.04em;
+}
+
+.panel-tab {
+  border-color: transparent;
+  background: transparent;
+  color: var(--portal-text-dim);
+}
+
+.panel-tab.active {
+  border-color: var(--portal-accent);
+  background: var(--portal-accent-soft);
+  color: var(--portal-accent);
+}
+
+.panel-body {
+  padding: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--portal-text-faint) transparent;
+}
+
+.panel-header button {
+  padding: 4px 9px;
+  border: 1px solid var(--portal-line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--portal-text-dim);
+}
+
+.panel-header button:hover {
+  border-color: var(--portal-accent);
+  color: var(--portal-accent);
+}
+
+.panel-collapse-handle {
+  border: 1px solid var(--portal-line);
+  border-right: 0;
+  border-radius: 14px 0 0 14px;
+  background: var(--portal-panel-strong);
+  box-shadow: var(--portal-shadow);
+  color: var(--portal-text-dim);
+  backdrop-filter: blur(16px);
+  transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+
+.panel-collapse-handle:hover {
+  border-color: var(--portal-accent);
+  background: var(--portal-panel-soft);
+  color: var(--portal-accent);
+}
+
+.flight-log-collapse-handle {
+  border-right: 1px solid var(--portal-line);
+  border-left: 0;
+  border-radius: 0 14px 14px 0;
+}
+
+.info-grid {
+  gap: 7px 14px;
+  line-height: 1.35;
+}
+
+.info-label {
+  color: var(--portal-text-dim);
+  font-weight: 600;
+  opacity: 1;
+}
+
+.info-value {
+  color: var(--portal-text);
+  font-family: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-description p,
+.metric-description ul {
+  color: var(--portal-text-dim);
+  line-height: 1.55;
+}
+
+.metric-description :deep(font) {
+  color: inherit;
+}
+
+.metric-description .good { color: #4ade80; }
+.metric-description .normal { color: #a3e635; }
+.metric-description .poor { color: #fbbf24; }
+.metric-description .bad { color: #f87171; }
+
+.chart-panel-header {
+  min-height: 42px;
+  padding: 8px 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--portal-line);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--portal-panel-soft);
+  backdrop-filter: blur(16px);
+}
+
+.chart-panel-header span {
+  color: var(--portal-text);
+  letter-spacing: 0.08em;
+}
+
+.chart-panel-header button,
+.chart-collapse-handle {
+  border: 1px solid var(--portal-line);
+  border-radius: 8px;
+  background: var(--portal-accent-soft);
+  color: var(--portal-accent);
+}
+
+.chart-collapse-handle {
+  border-radius: 14px;
+  background: var(--portal-panel-strong);
+  box-shadow: var(--portal-shadow);
+  backdrop-filter: blur(16px);
+}
+
+.chart {
+  border: 1px solid var(--portal-line);
+  border-radius: 0 0 16px 16px;
+  background: var(--portal-panel);
+  box-shadow: var(--portal-shadow);
+  backdrop-filter: blur(16px);
+}
+
+@media (max-width: 1200px) {
+  .flight-log-panel-shell,
+  .right-panel-group {
+    top: 150px;
+  }
+}
+
+@media (max-width: 900px) {
+  .floating-toolbar {
+    top: 10px;
+    left: 10px;
+    right: 10px;
+  }
+
+  .flight-log-panel-shell {
+    top: 146px;
+  }
+
+  .right-panel-group {
+    top: auto;
   }
 }
 </style>
