@@ -111,6 +111,7 @@ app.get('*', (req, res) => {
 });
 
 const port = process.env.PORT || 4000;
-app.listen(port, '0.0.0.0', () => {
-  console.log(`Server listening on http://0.0.0.0:${port}`);
+const host = process.env.BACKEND_HOST || '0.0.0.0';
+app.listen(port, host, () => {
+  console.log(`Server listening on http://${host}:${port}`);
 });

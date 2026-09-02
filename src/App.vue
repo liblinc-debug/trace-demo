@@ -436,8 +436,8 @@ export default {
         return this.loadingMapScript;
       }
       this.loadingMapScript = new Promise((resolve, reject) => {
-        const amapKey = import.meta.env.VITE_AMAP_KEY || 'df08b9775f1b5949a902daf1696e6560';
-        const securityJsCode = import.meta.env.VITE_AMAP_SECURITY || '3b542abbb6dde06fb6d0a6692089a30f';
+        const amapKey = import.meta.env.VITE_AMAP_KEY || '';
+        const securityJsCode = import.meta.env.VITE_AMAP_SECURITY || '';
         window._AMapSecurityConfig = { securityJsCode };
 
         const loadScript = (src) => new Promise((res, rej) => {

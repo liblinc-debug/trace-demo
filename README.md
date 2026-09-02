@@ -21,17 +21,61 @@
 
 ---
 
-## 运行说明
+## 快速开始
 
-1. 在项目根目录执行 `npm install` 安装依赖。
-2. 编辑 `.env` 文件，将 `VITE_AMAP_KEY` 替换为自己的高德 Web API KEY。
-3. 开发时运行 `npm run dev` 将同时启动前端开发服务器和后端接口，后者监听 3000 端口。
-4. 接口说明：
-   - `GET /api/logs` 返回可供选择的 CSV 文件列表。
-   - `GET /api/logs/:name` 下载指定日志文件。
+支持 macOS 与 Linux。请先安装 Node.js 18+、npm 和 `zip`。
 
-5. 生产构建：`npm run build` 会生成静态文件到 `dist`。
-   使用 `npm start` 启动服务器，或者将 `dist` 部署至静态托管服务。
+1. 创建环境配置：
+
+   ```sh
+   cp .env.example .env
+   ```
+
+2. 编辑 `.env`，填写自己的高德地图 Web 端 Key 与安全密钥：
+
+   ```dotenv
+   VITE_AMAP_KEY=你的高德地图_Key
+   VITE_AMAP_SECURITY=你的高德地图安全密钥
+   ```
+
+3. 一键安装依赖并启动开发环境：
+
+   ```sh
+   ./install.sh
+   ```
+
+   浏览器访问 `http://localhost:5173`。按 `Ctrl+C` 可同时停止前后端服务。
+
+生产模式会先构建前端，再由 Express 提供静态文件和 API：
+
+```sh
+./install.sh production
+```
+
+浏览器访问 `http://localhost:4000`。
+
+### 环境参数
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `VITE_AMAP_KEY` | 无 | 高德地图 Web 端 Key，必填 |
+| `VITE_AMAP_SECURITY` | 无 | 高德地图安全密钥，必填 |
+| `BACKEND_HOST` | `0.0.0.0` | Express 监听地址 |
+| `PORT` | `4000` | Express 端口，同时用于开发代理 |
+| `VITE_HOST` | `0.0.0.0` | Vite 开发服务器监听地址 |
+| `VITE_PORT` | `5173` | Vite 开发服务器端口 |
+
+脚本默认读取项目根目录的 `.env`。也可以通过 `ENV_FILE` 引入其他环境文件：
+
+```sh
+ENV_FILE=.env.production ./install.sh production
+```
+
+接口说明：
+
+- `GET /api/logs` 返回日期目录或指定日期下的 CSV 文件列表。
+- `GET /api/logs/file` 下载指定日志文件。
+- `GET /api/logs/zip` 下载指定日期目录的 ZIP 压缩包。
 
 ## 目录结构
 
@@ -41,10 +85,12 @@ trace-demo/
 ├── src/                   # Vue 应用源码
 │   ├── App.vue
 │   └── main.js
+├── install.sh             # 一键安装与启动脚本
 ├── server.js              # Express 后端
 ├── vite.config.js
 ├── package.json
-├── .env                   # 环境变量（API KEY）
+├── .env.example           # 环境变量模板
+├── .env                   # 本地环境变量（不提交）
 └── README.md
 ```
 
@@ -208,8 +254,6 @@ RSSI 是总接收功率（包含信号+噪声+干扰），单位 dBm。
 2. “飞行日志列表”中的文件支持多选，可以通过 shift+选择的方式选择多个飞行日志文件，所选择的飞行日志都需要按选择单个飞行日志时的功能一样，可以按指标以不用的着色在飞行轨迹上展示不同等级的颜色；趋势图只按第一次选择的飞行日志生成（即趋势图功能不需要修改）；飞行动画也只按第一次选择的飞行日志生成（即飞行动画展示功能也不需要修改）
 3. 多选的飞行日志只表现在飞行轨迹上的指标颜色变化，其他功能保持不变；
 4. 将站点信息也展示到多选的飞行轨迹上，通过站点选择来控制是展示站点名称，还是只展示一个点位
-
-
 
 ## 功能优化改进——1.4.1
 

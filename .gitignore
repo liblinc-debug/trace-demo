@@ -8,3 +8,4 @@ logs/**/*.csv
 logs/**/*.json
 logs.zip
 logs/202603*/*
+**/.DS_Store
