@@ -6,6 +6,7 @@
     "dev": "concurrently \"node server.js\" \"vite\"",
     "start": "node server.js",
     "build": "vite build",
+    "test": "node --test server.test.js",
     "serve": "vite preview",
     "backend": "node server.js"
   },
@@ -14,7 +15,6 @@
     "cors": "^2.8.5",
     "echarts": "^6.0.0",
     "express": "^4.18.2",
-    "papaparse": "^5.4.1",
     "vue": "^3.3.4"
   },
   "devDependencies": {

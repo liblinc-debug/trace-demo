@@ -1,12 +1,12 @@
 # 飞机记录回放
-根据无人机飞行记录，在地图上回放飞行过程
+根据 ClickHouse 中的无人机飞行记录，在地图上回放飞行过程。支持按飞机编号多选和飞行时段查询；第一架飞机用于动画与趋势图，其他飞机叠加展示轨迹。
 
 ## 功能要求概述：
-1. 无人机实际飞行记录在 "无人机08_yyyyMMdd_HHmmss_Flight.csv"文件中；
-2. 希望根据无人机实际飞行记录文件在“高德地图”上生成飞行轨迹， 并且可以播放飞行动画；
+1. 无人机飞行记录来自 ClickHouse 的 `uav_logs.comm_report` 表；
+2. 根据选择的飞机编号和飞行时段，在高德地图上生成飞行轨迹并播放飞行动画；
 
 ## 地图上的主要功能：
-1. 通过“下拉选择框”选择具体的“无人机实际飞行记录文件”；
+1. 通过左侧多选列表选择一个或多个飞机编号，并在顶部选择开始、结束时间；
 2. 有播放、暂停、进度条（可在进度条上拖动）来控制对应的无人机位置；
 3. 地图上用”四旋翼“无人机图标，展示无人机所在位置；
 4. 轨迹线根据点位信息，以”浅兰色“线段展示所有的轨迹线；
@@ -31,11 +31,12 @@
    cp .env.example .env
    ```
 
-2. 编辑 `.env`，填写自己的高德地图 Web 端 Key 与安全密钥：
+2. 编辑 `.env`，填写高德地图 Web 端 Key、安全密钥和 ClickHouse 密码：
 
    ```dotenv
    VITE_AMAP_KEY=你的高德地图_Key
    VITE_AMAP_SECURITY=你的高德地图安全密钥
+   CLICKHOUSE_PASSWORD=你的_ClickHouse_密码
    ```
 
 3. 一键安装依赖并启动开发环境：
@@ -64,6 +65,13 @@
 | `PORT` | `4000` | Express 端口，同时用于开发代理 |
 | `VITE_HOST` | `0.0.0.0` | Vite 开发服务器监听地址 |
 | `VITE_PORT` | `5173` | Vite 开发服务器端口 |
+| `CLICKHOUSE_HTTP_URL` | `http://10.252.2.13:8123` | ClickHouse HTTP 地址，仅由后端访问 |
+| `CLICKHOUSE_DATABASE` | `uav_logs` | ClickHouse 数据库 |
+| `CLICKHOUSE_TABLE` | `comm_report` | 飞行记录表 |
+| `CLICKHOUSE_USER` | `default` | ClickHouse 用户名 |
+| `CLICKHOUSE_PASSWORD` | 无 | ClickHouse 密码，必填 |
+| `CLICKHOUSE_TIMEOUT_S` | `8` | 数据库查询超时秒数 |
+| `CLICKHOUSE_MAX_ROWS` | `500000` | 单次查询最大返回行数 |
 
 脚本默认读取项目根目录的 `.env`。也可以通过 `ENV_FILE` 引入其他环境文件：
 
@@ -73,6 +81,9 @@ ENV_FILE=.env.production ./install.sh production
 
 接口说明：
 
+- `GET /api/flights/aircraft` 返回可选飞机及各自的数据时间范围。
+- `GET /api/flights` 按 `aircraftIds`、`start`、`end` 返回回放轨迹。
+- `GET /api/flights/export` 按相同筛选条件下载 CSV。
 - `GET /api/logs` 返回日期目录或指定日期下的 CSV 文件列表。
 - `GET /api/logs/file` 下载指定日志文件。
 - `GET /api/logs/zip` 下载指定日期目录的 ZIP 压缩包。
@@ -105,12 +116,6 @@ trace-demo/
 5. 在图表上点击时，地图上的动画展示的时间点保持与在图表上点击的时间点一至，方便查看某个指标数据异常时，观察无人机此时所在的位置；
 6. 显示一个半透明浮动层展示无人机的实时信息：包括以下指标：Timestamp	Latitude	Longitude	Altitude(m)	Speed(m/s)	Climb(m/s)	Heading(deg)	Loss_Rate(%)	Avg_Ping(ms)	Dist_to_Arm_Pt(m)	Flight_Dist(m)	WP_Speed(m/s)	WP_Radius(m)	WP_Accel(m/s2)	Network	Band	Signal_dBm	RSRP	RSRQ	SNR	RSSI	Jitter(ms)，要求排列整齐，展示在右上角，不要太大的图层
 7. 其他功能保持原功能状态；
-
-
-```sh
-
-```
-
 
 ---
 
@@ -242,9 +247,7 @@ RSSI 是总接收功率（包含信号+噪声+干扰），单位 dBm。
 3. 其他功能保持不变；
 
 
-
 ## 功能优化改进——1.3.4
-
 1. 增加一个下载按钮在指标文字前，点击后下载对应的 csv 文件到本地；
 2. 其他功能保持不变；
 
@@ -272,3 +275,18 @@ RSSI 是总接收功率（包含信号+噪声+干扰），单位 dBm。
 1. 统计信息中增加 扇区 (CELL) 站点数量统计，统计此次飞行中遇到的所有扇区 (CELL)总数量（不重复扇区总数量）；
 2. 统计信息中增加 基站 ( PCI ) 站点数量统计，统计此次飞行中遇到的所有基站 ( PCI )总数量（不重复基站总数量）；
 3. 下载功能改为下载对应当前“选择日期”目录中的所有日志文件，以zip压缩包的形式下载；
+
+## 功能优化改进——1.5
+1. 开发一版以 clickhours 数据库作为数据源的飞行记录回放功能，数据源定义如下所示：
+
+```json
+  "clickhouse": {
+    "http_url": "http://10.252.2.13:8123",
+    "database": "uav_logs",
+    "user": "default",
+    "password": "uav_logger",
+    "timeout_s": 8
+  }
+```
+2. 对应数据表为 `uav_logs.comm_report`，后端通过 ClickHouse HTTP 接口查询并映射为原 CSV 回放字段；
+3. 界面支持飞机编号多选、开始/结束时间筛选和筛选结果 CSV 下载，其他地图、指标着色、统计、趋势图与回放功能保持不变。

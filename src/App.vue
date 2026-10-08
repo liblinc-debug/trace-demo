@@ -2,24 +2,26 @@
   <div class="app-container" :class="themeMode">
     <div class="map-stage">
       <div class="map" ref="mapContainer"></div>
-      <div class="panel-shell flight-log-panel-shell" v-if="selectedDir || files.length" :class="{ collapsed: flightLogCollapsed }">
+      <div class="panel-shell flight-log-panel-shell" v-if="aircraftOptions.length" :class="{ collapsed: flightLogCollapsed }">
         <button
           v-if="flightLogCollapsed"
           type="button"
           class="panel-collapse-handle flight-log-collapse-handle"
           @click="toggleFlightLogCollapsed(false)"
         >
-          展开日志列表
+          展开飞机列表
         </button>
         <div v-else class="panel flight-log-panel" :class="themeMode">
           <div class="panel-header">
-            <div>飞行日志列表</div>
+            <div>飞机编号</div>
             <button type="button" @click="toggleFlightLogCollapsed(true)">收起</button>
           </div>
           <div class="panel-body flight-log-body">
-            <div class="flight-log-tip">按住 Shift 可连续多选，第一条文件用于趋势图和飞行动画。</div>
-            <select v-model="selectedFiles" multiple :size="Math.max(8, Math.min(16, files.length || 8))" @change="onFilesChange">
-              <option v-for="f in files" :key="f" :value="f">{{ f }}</option>
+            <div class="flight-log-tip">支持多选；第一架飞机用于趋势图和飞行动画，其余飞机叠加展示轨迹。</div>
+            <select v-model="selectedAircraftIds" multiple :size="Math.max(8, Math.min(16, aircraftOptions.length || 8))">
+              <option v-for="aircraft in aircraftOptions" :key="aircraft.aircraft_id" :value="aircraft.aircraft_id">
+                {{ aircraft.aircraft_id }}（{{ aircraft.row_count }} 条）
+              </option>
             </select>
           </div>
         </div>
@@ -27,11 +29,18 @@
       <div class="floating-toolbar">
 
         <div class="controls">
-          <select v-model="selectedDir" @change="onDirChange">
-            <option value="" disabled>请选择日期目录...</option>
-            <option v-for="d in dirs" :key="d" :value="d">{{ d }}</option>
-          </select>
-          <button type="button" @click="downloadCurrentZip" :disabled="!selectedDir">
+          <label class="control-label time-control">
+            <span>开始</span>
+            <input v-model="startTime" type="datetime-local" step="1" />
+          </label>
+          <label class="control-label time-control">
+            <span>结束</span>
+            <input v-model="endTime" type="datetime-local" step="1" />
+          </label>
+          <button type="button" class="primary-button" @click="loadFlightData" :disabled="loading || !hasFlightSelection">
+            {{ loading ? '查询中…' : '查询' }}
+          </button>
+          <button type="button" @click="downloadFlightData" :disabled="loading || !hasFlightSelection">
             下载
           </button>
           <label class="control-label metric-select">
@@ -60,6 +69,7 @@
           </label>
 
           <input class="timeline-range" type="range" min="0" :max="points.length-1" v-model.number="currentIndex" @input="onSliderChange" />
+          <span v-if="loadError" class="load-error" role="alert">{{ loadError }}</span>
         </div>
       </div>
       <div class="right-panel-group">
@@ -150,16 +160,17 @@
 
 <script>
 import axios from 'axios';
-import Papa from 'papaparse';
 import * as echarts from 'echarts';
 
 export default {
   data() {
     return {
-      dirs: [],
-      files: [],
-      selectedDir: '',
-      selectedFiles: [],
+      aircraftOptions: [],
+      selectedAircraftIds: [],
+      startTime: '',
+      endTime: '',
+      loading: false,
+      loadError: '',
       points: [],
       flightTracks: [],
       currentIndex: 0,
@@ -212,8 +223,8 @@ export default {
     canPlay() {
       return this.points.length > 0 && !this.isPlaying;
     },
-    primarySelectedFile() {
-      return this.selectedFiles[0] || '';
+    hasFlightSelection() {
+      return this.selectedAircraftIds.length > 0 && Boolean(this.startTime) && Boolean(this.endTime);
     },
     activePoint() {
       return this.points[this.currentIndex] || null;
@@ -312,82 +323,73 @@ export default {
     }
   },
   methods: {
-    async fetchLogs() {
-      const res = await axios.get('/api/logs');
-      this.dirs = Array.isArray(res.data) ? res.data : [];
-      if (this.dirs.length > 0) {
-        this.selectedDir = this.dirs[0];
-        await this.fetchFilesForDir();
+    async fetchAircrafts() {
+      this.loading = true;
+      this.loadError = '';
+      try {
+        const res = await axios.get('/api/flights/aircraft');
+        this.aircraftOptions = Array.isArray(res.data) ? res.data : [];
+        if (!this.aircraftOptions.length) {
+          this.loadError = '数据库中暂无飞机记录';
+          return;
+        }
+        const first = this.aircraftOptions[0];
+        this.selectedAircraftIds = [first.aircraft_id];
+        this.startTime = this.toDatetimeLocal(first.min_ts);
+        this.endTime = this.toDatetimeLocal(Number(first.max_ts) + 1000);
+        await this.loadFlightData();
+      } catch (err) {
+        console.error('飞机列表加载失败:', err);
+        this.loadError = this.getRequestError(err, '飞机列表加载失败，请检查 ClickHouse 配置');
+      } finally {
+        this.loading = false;
       }
     },
-    async fetchFilesForDir() {
-      if (!this.selectedDir) {
-        this.files = [];
-        this.selectedFiles = [];
-        this.flightTracks = [];
-        this.points = [];
-        this.clearTrackLayers();
-        this.clearFlightMarkers();
-        this.initChart();
-        return;
-      }
-      const res = await axios.get('/api/logs', { params: { dir: this.selectedDir } });
-      const files = Array.isArray(res.data) ? res.data : [];
-      this.files = files.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
-      if (this.files.length > 0) {
-        this.selectedFiles = [this.files[0]];
-        await this.onFilesChange();
-      } else {
-        this.selectedFiles = [];
-        this.flightTracks = [];
-        this.points = [];
-      }
-    },
-    async onDirChange() {
-      await this.fetchFilesForDir();
-    },
-    async onFilesChange() {
+    async loadFlightData() {
       this.pause();
-      if (!this.selectedDir || !this.selectedFiles.length) {
-        this.flightTracks = [];
-        this.points = [];
-        this.clearTrackLayers();
-        this.clearFlightMarkers();
-        this.initChart();
+      this.loadError = '';
+      if (!this.hasFlightSelection) return;
+      const start = new Date(this.startTime);
+      const end = new Date(this.endTime);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
+        this.loadError = '结束时间必须晚于开始时间';
         return;
       }
 
-      const uniqueFiles = [...new Set(this.selectedFiles)];
-      this.selectedFiles = uniqueFiles;
-      const tracks = await Promise.all(uniqueFiles.map(async fileName => {
-        const points = await this.fetchTrackPoints(fileName);
-        return { name: fileName, points };
-      }));
-
-      this.flightTracks = tracks.filter(track => track.points.length > 0);
-      this.points = this.flightTracks[0]?.points || [];
-      this.currentIndex = 0;
-      if (this.points.length > 0) {
-        try {
+      this.loading = true;
+      try {
+        const res = await axios.get('/api/flights', {
+          params: {
+            aircraftIds: [...new Set(this.selectedAircraftIds)].join(','),
+            start: start.toISOString(),
+            end: end.toISOString()
+          }
+        });
+        const tracks = Array.isArray(res.data?.tracks) ? res.data.tracks : [];
+        this.flightTracks = tracks
+          .map(track => ({ name: track.name, points: this.normalizeTrackPoints(track.points) }))
+          .filter(track => track.points.length > 0);
+        this.points = this.flightTracks[0]?.points || [];
+        this.currentIndex = 0;
+        this.clearTrackLayers();
+        if (this.points.length > 0) {
           await this.loadAMapScript();
           await this.drawTrack({ resetViewport: true });
-        } catch (err) {
-          console.error('AMap 加载失败:', err);
-          alert('地图脚本加载失败，请检查网络或 API Key。');
+        } else {
+          this.clearFlightMarkers();
+          this.loadError = '所选飞机和时段没有有效的轨迹数据';
         }
-      } else {
+        this.initChart();
+      } catch (err) {
+        console.error('飞行数据加载失败:', err);
         this.clearFlightMarkers();
-        alert('没有有效的轨迹数据');
+        this.loadError = this.getRequestError(err, '飞行数据加载失败，请稍后重试');
+      } finally {
+        this.loading = false;
       }
-      this.initChart();
     },
-    async fetchTrackPoints(fileName) {
-      const res = await axios.get('/api/logs/file', {
-        params: { dir: this.selectedDir, name: fileName }
-      });
-      const text = res.data;
-      const parsed = Papa.parse(text, { header: true, dynamicTyping: true });
-      const validPoints = parsed.data.filter(p =>
+    normalizeTrackPoints(points) {
+      const validPoints = (Array.isArray(points) ? points : []).filter(p =>
         p.Latitude != null && p.Longitude != null &&
         p['Altitude(m)'] != null &&
         !isNaN(p.Latitude) && !isNaN(p.Longitude) && !isNaN(p['Altitude(m)']) &&
@@ -404,29 +406,39 @@ export default {
         };
       });
     },
-    async downloadCurrentZip() {
-      if (!this.selectedDir) {
-        alert('请先选择日期目录');
-        return;
-      }
+    async downloadFlightData() {
+      if (!this.hasFlightSelection) return;
       try {
-        const res = await axios.get('/api/logs/zip', {
-          params: { dir: this.selectedDir },
+        const res = await axios.get('/api/flights/export', {
+          params: {
+            aircraftIds: [...new Set(this.selectedAircraftIds)].join(','),
+            start: new Date(this.startTime).toISOString(),
+            end: new Date(this.endTime).toISOString()
+          },
           responseType: 'blob'
         });
-        const blob = new Blob([res.data], { type: 'application/zip' });
+        const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
         const url = window.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `${this.selectedDir}.zip`;
+        link.download = `flight_${this.startTime.slice(0, 10)}_${this.endTime.slice(0, 10)}.csv`;
         document.body.appendChild(link);
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
       } catch (err) {
-        console.error('ZIP 下载失败:', err);
-        alert('ZIP 下载失败，请稍后重试');
+        console.error('CSV 下载失败:', err);
+        alert('CSV 下载失败，请缩短时间范围后重试');
       }
+    },
+    toDatetimeLocal(value) {
+      const date = new Date(Number(value));
+      if (Number.isNaN(date.getTime())) return '';
+      const pad = number => String(number).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    },
+    getRequestError(error, fallback) {
+      return error?.response?.data?.error || fallback;
     },
     loadAMapScript() {
       if (this.mapScriptLoaded && window.AMap) {
@@ -1504,7 +1516,7 @@ export default {
     }
   },
   mounted() {
-    this.fetchLogs();
+    this.fetchAircrafts();
     this.loadAMapScript().catch(err => {
       console.warn('AMap 预加载失败:', err);
     });
@@ -1563,6 +1575,7 @@ export default {
 }
 .controls select,
 .controls button,
+.controls input[type="datetime-local"],
 .controls input[type="range"] {
   font-size: 1em;
 }
@@ -1617,7 +1630,8 @@ export default {
   pointer-events: auto;
 }
 .app-container.night .controls select,
-.app-container.night .controls button {
+.app-container.night .controls button,
+.app-container.night .controls input[type="datetime-local"] {
   background: rgba(8, 15, 33, 0.96);
   color: #f8fafc;
   border-color: rgba(148, 163, 184, 0.25);
@@ -2107,7 +2121,8 @@ export default {
 }
 
 .controls select,
-.controls button {
+.controls button,
+.controls input[type="datetime-local"] {
   height: 34px;
   padding: 0 11px;
   border: 1px solid var(--portal-line);
@@ -2122,6 +2137,24 @@ export default {
 
 .controls button {
   cursor: pointer;
+}
+
+.controls input[type="datetime-local"] {
+  min-width: 184px;
+}
+
+.controls .primary-button {
+  border-color: var(--portal-accent);
+  background: var(--portal-accent-soft);
+  color: var(--portal-accent);
+  font-weight: 700;
+}
+
+.load-error {
+  flex: 1 1 100%;
+  color: #f87171;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .controls button:hover:not(:disabled),
@@ -2143,6 +2176,7 @@ export default {
 
 .controls button:focus-visible,
 .controls select:focus-visible,
+.controls input[type="datetime-local"]:focus-visible,
 .panel button:focus-visible,
 .panel-collapse-handle:focus-visible,
 .chart-collapse-handle:focus-visible {

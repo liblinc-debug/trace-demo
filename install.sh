@@ -47,6 +47,11 @@ if [[ -z "${VITE_AMAP_KEY:-}" || -z "${VITE_AMAP_SECURITY:-}" ||
   exit 1
 fi
 
+if [[ -z "${CLICKHOUSE_PASSWORD:-}" || "$CLICKHOUSE_PASSWORD" == "your_clickhouse_password" ]]; then
+  echo "错误：请在 $ENV_FILE 中配置 CLICKHOUSE_PASSWORD。" >&2
+  exit 1
+fi
+
 RUN_MODE="${1:-development}"
 case "$RUN_MODE" in
   development|dev|production|prod) ;;
