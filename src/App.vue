@@ -37,7 +37,7 @@
             <span>结束</span>
             <input v-model="endTime" type="datetime-local" step="1" />
           </label>
-          <button type="button" class="primary-button" @click="loadFlightData" :disabled="loading || !hasFlightSelection">
+          <button type="button" class="primary-button" @click="loadFlightData()" :disabled="loading || !hasFlightSelection">
             {{ loading ? '查询中…' : '查询' }}
           </button>
           <button type="button" @click="downloadFlightData" :disabled="loading || !hasFlightSelection">
@@ -147,7 +147,7 @@
           <div class="chart-panel-header">
             <div class="chart-panel-title">
               <span>趋势图</span>
-              <small>在图表绘图区横向拖拽，松开后自动查询所选时间段</small>
+              <small>横向拖拽查询所选时间段；右键恢复原时段</small>
             </div>
             <button type="button" @click="toggleChartCollapsed">收起</button>
           </div>
@@ -223,7 +223,8 @@ export default {
       segmentLines: [],
       chartRangeTimer: null,
       chartDragStart: null,
-      chartSelectionRect: null
+      chartSelectionRect: null,
+      chartOriginalRange: null
     };
   },
   computed: {
@@ -352,7 +353,7 @@ export default {
         this.loading = false;
       }
     },
-    async loadFlightData() {
+    async loadFlightData(options = {}) {
       clearTimeout(this.chartRangeTimer);
       this.chartRangeTimer = null;
       this.pause();
@@ -384,6 +385,12 @@ export default {
         if (this.points.length > 0) {
           await this.loadAMapScript();
           await this.drawTrack({ resetViewport: true });
+          if (!options.fromChartRange) {
+            this.chartOriginalRange = {
+              startTime: this.startTime,
+              endTime: this.endTime
+            };
+          }
         } else {
           this.clearFlightMarkers();
           this.loadError = '所选飞机和时段没有有效的轨迹数据';
@@ -1263,6 +1270,7 @@ export default {
     },
     handleChartMouseDown(event) {
       if (this.loading || !this.chart || this.points.length < 2) return;
+      if (event?.event?.button !== undefined && event.event.button !== 0) return;
       const point = [event.offsetX, event.offsetY];
       if (!this.chart.containPixel({ gridIndex: 0 }, point)) return;
       if (this.chartSelectionRect) {
@@ -1326,8 +1334,21 @@ export default {
         if (nextStartTime === this.startTime && nextEndTime === this.endTime) return;
         this.startTime = nextStartTime;
         this.endTime = nextEndTime;
-        this.loadFlightData();
+        this.loadFlightData({ fromChartRange: true });
       }, 250);
+    },
+    handleChartContextMenu(event) {
+      event?.event?.preventDefault?.();
+      if (this.loading) return;
+      const original = this.chartOriginalRange;
+      if (!original || (original.startTime === this.startTime && original.endTime === this.endTime)) return;
+      clearTimeout(this.chartRangeTimer);
+      this.chartRangeTimer = null;
+      this.chartDragStart = null;
+      if (this.chartSelectionRect) this.chartSelectionRect.attr({ invisible: true });
+      this.startTime = original.startTime;
+      this.endTime = original.endTime;
+      this.loadFlightData({ fromChartRange: true });
     },
     play() {
       if (this.isPlaying) return;
@@ -1448,7 +1469,7 @@ export default {
           data: series.map(item => item.name),
           selected,
           top: 0,
-          right: 12,
+          left: 'center',
           textStyle: { color: theme.textColor },
           formatter: name => `${name}: ${this.legendValues[name] || '-'}`
         },
@@ -1510,9 +1531,11 @@ export default {
         renderer.off('mousedown', this.handleChartMouseDown);
         renderer.off('mousemove', this.handleChartMouseMove);
         renderer.off('mouseup', this.handleChartMouseUp);
+        renderer.off('contextmenu', this.handleChartContextMenu);
         renderer.on('mousedown', this.handleChartMouseDown);
         renderer.on('mousemove', this.handleChartMouseMove);
         renderer.on('mouseup', this.handleChartMouseUp);
+        renderer.on('contextmenu', this.handleChartContextMenu);
         this.chart.off('click', this.handleChartClick);
         this.chart.on('click', this.handleChartClick);
         this.chart.setOption(this.buildChartOption(), true);
@@ -1619,6 +1642,7 @@ export default {
       renderer.off('mousedown', this.handleChartMouseDown);
       renderer.off('mousemove', this.handleChartMouseMove);
       renderer.off('mouseup', this.handleChartMouseUp);
+      renderer.off('contextmenu', this.handleChartContextMenu);
       if (this.chartSelectionRect) renderer.remove(this.chartSelectionRect);
     }
     window.removeEventListener('resize', this.handleWindowResize);
