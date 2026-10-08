@@ -145,7 +145,10 @@
       <div class="chart-shell" :class="{ collapsed: chartCollapsed }">
         <div v-show="!chartCollapsed" class="chart-panel">
           <div class="chart-panel-header">
-            <span>趋势图</span>
+            <div class="chart-panel-title">
+              <span>趋势图</span>
+              <small>在图表绘图区横向拖拽，松开后自动查询所选时间段</small>
+            </div>
             <button type="button" @click="toggleChartCollapsed">收起</button>
           </div>
           <div class="chart" ref="chartContainer"></div>
@@ -161,6 +164,7 @@
 <script>
 import axios from 'axios';
 import * as echarts from 'echarts';
+import { getChartRangeIndices } from './chartRange.mjs';
 
 export default {
   data() {
@@ -216,7 +220,10 @@ export default {
       flightLogCollapsed: false,
       playbackRate: 1,
       speedOptions: [0.5, 1, 1.5, 2, 4, 8, 16],
-      segmentLines: []
+      segmentLines: [],
+      chartRangeTimer: null,
+      chartDragStart: null,
+      chartSelectionRect: null
     };
   },
   computed: {
@@ -346,6 +353,8 @@ export default {
       }
     },
     async loadFlightData() {
+      clearTimeout(this.chartRangeTimer);
+      this.chartRangeTimer = null;
       this.pause();
       this.loadError = '';
       if (!this.hasFlightSelection) return;
@@ -1063,6 +1072,8 @@ export default {
     },
     getTimestampMs(point) {
       if (!point) return null;
+      const timestampMs = Number(point.TimestampMs);
+      if (Number.isFinite(timestampMs)) return timestampMs;
       const value = this.getRealtimeFieldValue(point, 'Timestamp');
       if (value === null || value === undefined || value === '') return null;
       const date = new Date(value);
@@ -1250,6 +1261,74 @@ export default {
         dataIndex: index
       });
     },
+    handleChartMouseDown(event) {
+      if (this.loading || !this.chart || this.points.length < 2) return;
+      const point = [event.offsetX, event.offsetY];
+      if (!this.chart.containPixel({ gridIndex: 0 }, point)) return;
+      if (this.chartSelectionRect) {
+        this.chart.getZr().remove(this.chartSelectionRect);
+        this.chartSelectionRect = null;
+      }
+      this.chartDragStart = point;
+    },
+    handleChartMouseMove(event) {
+      if (!this.chartDragStart || !this.chart) return;
+      const distance = Math.abs(event.offsetX - this.chartDragStart[0]);
+      if (distance < 6) return;
+      const grid = this.chart.getModel().getComponent('grid', 0)?.coordinateSystem?.getRect();
+      if (!grid) return;
+      const currentX = Math.min(grid.x + grid.width, Math.max(grid.x, event.offsetX));
+      const startX = Math.min(grid.x + grid.width, Math.max(grid.x, this.chartDragStart[0]));
+      if (!this.chartSelectionRect) {
+        this.chartSelectionRect = new echarts.graphic.Rect({
+          silent: true,
+          z: 10000,
+          style: {
+            fill: 'rgba(55, 213, 242, 0.22)',
+            stroke: '#37d5f2',
+            lineWidth: 1
+          }
+        });
+        this.chart.getZr().add(this.chartSelectionRect);
+      }
+      this.chartSelectionRect.attr({
+        invisible: false,
+        shape: {
+          x: Math.min(startX, currentX),
+          y: grid.y,
+          width: Math.abs(currentX - startX),
+          height: grid.height
+        }
+      });
+    },
+    handleChartMouseUp(event) {
+      const start = this.chartDragStart;
+      this.chartDragStart = null;
+      if (this.chartSelectionRect) this.chartSelectionRect.attr({ invisible: true });
+      if (!start || !this.chart || Math.abs(event.offsetX - start[0]) < 6) return;
+      const startValue = this.chart.convertFromPixel({ xAxisIndex: 0 }, start[0]);
+      const endValue = this.chart.convertFromPixel({ xAxisIndex: 0 }, event.offsetX);
+      this.handleChartRangeChange({ startValue, endValue });
+    },
+    handleChartRangeChange(event) {
+      if (this.loading) return;
+      const indices = getChartRangeIndices(event, this.points.length);
+      if (!indices) return;
+      const startMs = this.getTimestampMs(this.points[indices[0]]);
+      const endMs = this.getTimestampMs(this.points[indices[1]]);
+      if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || startMs >= endMs) return;
+
+      clearTimeout(this.chartRangeTimer);
+      this.chartRangeTimer = setTimeout(() => {
+        this.chartRangeTimer = null;
+        const nextStartTime = this.toDatetimeLocal(startMs);
+        const nextEndTime = this.toDatetimeLocal(endMs + 1000);
+        if (nextStartTime === this.startTime && nextEndTime === this.endTime) return;
+        this.startTime = nextStartTime;
+        this.endTime = nextEndTime;
+        this.loadFlightData();
+      }, 250);
+    },
     play() {
       if (this.isPlaying) return;
       this.isPlaying = true;
@@ -1369,6 +1448,7 @@ export default {
           data: series.map(item => item.name),
           selected,
           top: 0,
+          right: 12,
           textStyle: { color: theme.textColor },
           formatter: name => `${name}: ${this.legendValues[name] || '-'}`
         },
@@ -1426,6 +1506,13 @@ export default {
         if (!this.chart) {
           this.chart = echarts.init(this.$refs.chartContainer);
         }
+        const renderer = this.chart.getZr();
+        renderer.off('mousedown', this.handleChartMouseDown);
+        renderer.off('mousemove', this.handleChartMouseMove);
+        renderer.off('mouseup', this.handleChartMouseUp);
+        renderer.on('mousedown', this.handleChartMouseDown);
+        renderer.on('mousemove', this.handleChartMouseMove);
+        renderer.on('mouseup', this.handleChartMouseUp);
         this.chart.off('click', this.handleChartClick);
         this.chart.on('click', this.handleChartClick);
         this.chart.setOption(this.buildChartOption(), true);
@@ -1526,6 +1613,14 @@ export default {
     });
   },
   beforeUnmount() {
+    clearTimeout(this.chartRangeTimer);
+    if (this.chart) {
+      const renderer = this.chart.getZr();
+      renderer.off('mousedown', this.handleChartMouseDown);
+      renderer.off('mousemove', this.handleChartMouseMove);
+      renderer.off('mouseup', this.handleChartMouseUp);
+      if (this.chartSelectionRect) renderer.remove(this.chartSelectionRect);
+    }
     window.removeEventListener('resize', this.handleWindowResize);
     if (this.map && this.mapViewSyncHandler) {
       this.map.off('moveend', this.mapViewSyncHandler);
@@ -2369,6 +2464,23 @@ export default {
   letter-spacing: 0.08em;
 }
 
+.chart-panel-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.chart-panel-title small {
+  overflow: hidden;
+  color: var(--portal-text-dim);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chart-panel-header button,
 .chart-collapse-handle {
   border: 1px solid var(--portal-line);
@@ -2412,6 +2524,10 @@ export default {
 
   .right-panel-group {
     top: auto;
+  }
+
+  .chart-panel-title small {
+    display: none;
   }
 }
 </style>

@@ -32,6 +32,7 @@ if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(CLICKHOUSE_DATABASE) ||
 
 const FLIGHT_COLUMNS = `
   aircraft_id AS Aircraft_ID,
+  ts_unix_ms AS TimestampMs,
   formatDateTime(fromUnixTimestamp64Milli(ts_unix_ms), '%Y-%m-%d %H:%i:%S', 'Asia/Shanghai') AS Timestamp,
   latitude_deg AS Latitude,
   longitude_deg AS Longitude,

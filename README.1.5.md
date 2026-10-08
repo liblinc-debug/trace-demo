@@ -1,12 +1,12 @@
 # 飞机记录回放
-根据 ClickHouse 中的无人机飞行记录，在地图上回放飞行过程。支持按飞机编号多选和飞行时段查询；第一架飞机用于动画与趋势图，其他飞机叠加展示轨迹。
+根据无人机飞行记录，在地图上回放飞行过程
 
 ## 功能要求概述：
-1. 无人机飞行记录来自 ClickHouse 的 `uav_logs.comm_report` 表；
-2. 根据选择的飞机编号和飞行时段，在高德地图上生成飞行轨迹并播放飞行动画；
+1. 无人机实际飞行记录在 "无人机08_yyyyMMdd_HHmmss_Flight.csv"文件中；
+2. 希望根据无人机实际飞行记录文件在“高德地图”上生成飞行轨迹， 并且可以播放飞行动画；
 
 ## 地图上的主要功能：
-1. 通过左侧多选列表选择一个或多个飞机编号，并在顶部选择开始、结束时间；
+1. 通过“下拉选择框”选择具体的“无人机实际飞行记录文件”；
 2. 有播放、暂停、进度条（可在进度条上拖动）来控制对应的无人机位置；
 3. 地图上用”四旋翼“无人机图标，展示无人机所在位置；
 4. 轨迹线根据点位信息，以”浅兰色“线段展示所有的轨迹线；
@@ -31,12 +31,11 @@
    cp .env.example .env
    ```
 
-2. 编辑 `.env`，填写高德地图 Web 端 Key、安全密钥和 ClickHouse 密码：
+2. 编辑 `.env`，填写自己的高德地图 Web 端 Key 与安全密钥：
 
    ```dotenv
    VITE_AMAP_KEY=你的高德地图_Key
    VITE_AMAP_SECURITY=你的高德地图安全密钥
-   CLICKHOUSE_PASSWORD=你的_ClickHouse_密码
    ```
 
 3. 一键安装依赖并启动开发环境：
@@ -65,13 +64,6 @@
 | `PORT` | `4000` | Express 端口，同时用于开发代理 |
 | `VITE_HOST` | `0.0.0.0` | Vite 开发服务器监听地址 |
 | `VITE_PORT` | `5173` | Vite 开发服务器端口 |
-| `CLICKHOUSE_HTTP_URL` | `http://10.252.2.13:8123` | ClickHouse HTTP 地址，仅由后端访问 |
-| `CLICKHOUSE_DATABASE` | `uav_logs` | ClickHouse 数据库 |
-| `CLICKHOUSE_TABLE` | `comm_report` | 飞行记录表 |
-| `CLICKHOUSE_USER` | `default` | ClickHouse 用户名 |
-| `CLICKHOUSE_PASSWORD` | 无 | ClickHouse 密码，必填 |
-| `CLICKHOUSE_TIMEOUT_S` | `8` | 数据库查询超时秒数 |
-| `CLICKHOUSE_MAX_ROWS` | `500000` | 单次查询最大返回行数 |
 
 脚本默认读取项目根目录的 `.env`。也可以通过 `ENV_FILE` 引入其他环境文件：
 
@@ -81,9 +73,6 @@ ENV_FILE=.env.production ./install.sh production
 
 接口说明：
 
-- `GET /api/flights/aircraft` 返回可选飞机及各自的数据时间范围。
-- `GET /api/flights` 按 `aircraftIds`、`start`、`end` 返回回放轨迹。
-- `GET /api/flights/export` 按相同筛选条件下载 CSV。
 - `GET /api/logs` 返回日期目录或指定日期下的 CSV 文件列表。
 - `GET /api/logs/file` 下载指定日志文件。
 - `GET /api/logs/zip` 下载指定日期目录的 ZIP 压缩包。
@@ -288,8 +277,7 @@ RSSI 是总接收功率（包含信号+噪声+干扰），单位 dBm。
     "timeout_s": 8
   }
 ```
+
 2. 对应的数据表为：comm_report，可以通过 SQL 访问：SELECT * FROM "uav_logs"."comm_report" LIMIT 100，字段基本与 csv 格式的字段对应；
 
 3. 通过数据库获取数据，需要在界面上选择对应的飞机编号（可以多选），选择飞行时段，其他功能保持不变，界面可以进行美化；
-
-4. 在趋势图中利用 echart 的拖拽功能，快速定位时间段，就是说，在趋势图中通过鼠标拖拽，定位时间段的开始时间与结束时间，拖拽后，相应的数据集重新查询，所有展示的效果进行刷新
