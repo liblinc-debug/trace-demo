@@ -165,6 +165,7 @@
 import axios from 'axios';
 import * as echarts from 'echarts';
 import { getChartRangeIndices } from './chartRange.mjs';
+import { getChartLegendSelection, getChartTooltipRows, getExpandedAxisMax } from './chartState.mjs';
 
 export default {
   data() {
@@ -224,7 +225,8 @@ export default {
       chartRangeTimer: null,
       chartDragStart: null,
       chartSelectionRect: null,
-      chartOriginalRange: null
+      chartOriginalRange: null,
+      chartLegendSelection: null
     };
   },
   computed: {
@@ -356,6 +358,7 @@ export default {
     async loadFlightData(options = {}) {
       clearTimeout(this.chartRangeTimer);
       this.chartRangeTimer = null;
+      this.clearChartInteraction();
       this.pause();
       this.loadError = '';
       if (!this.hasFlightSelection) return;
@@ -1273,10 +1276,7 @@ export default {
       if (event?.event?.button !== undefined && event.event.button !== 0) return;
       const point = [event.offsetX, event.offsetY];
       if (!this.chart.containPixel({ gridIndex: 0 }, point)) return;
-      if (this.chartSelectionRect) {
-        this.chart.getZr().remove(this.chartSelectionRect);
-        this.chartSelectionRect = null;
-      }
+      this.clearChartInteraction();
       this.chartDragStart = point;
     },
     handleChartMouseMove(event) {
@@ -1299,6 +1299,7 @@ export default {
         });
         this.chart.getZr().add(this.chartSelectionRect);
       }
+      this.hideChartIndicators();
       this.chartSelectionRect.attr({
         invisible: false,
         shape: {
@@ -1311,11 +1312,13 @@ export default {
     },
     handleChartMouseUp(event) {
       const start = this.chartDragStart;
-      this.chartDragStart = null;
-      if (this.chartSelectionRect) this.chartSelectionRect.attr({ invisible: true });
-      if (!start || !this.chart || Math.abs(event.offsetX - start[0]) < 6) return;
+      if (!start || !this.chart || Math.abs(event.offsetX - start[0]) < 6) {
+        this.clearChartInteraction();
+        return;
+      }
       const startValue = this.chart.convertFromPixel({ xAxisIndex: 0 }, start[0]);
       const endValue = this.chart.convertFromPixel({ xAxisIndex: 0 }, event.offsetX);
+      this.clearChartInteraction();
       this.handleChartRangeChange({ startValue, endValue });
     },
     handleChartRangeChange(event) {
@@ -1341,11 +1344,10 @@ export default {
       event?.event?.preventDefault?.();
       if (this.loading) return;
       const original = this.chartOriginalRange;
+      this.clearChartInteraction();
       if (!original || (original.startTime === this.startTime && original.endTime === this.endTime)) return;
       clearTimeout(this.chartRangeTimer);
       this.chartRangeTimer = null;
-      this.chartDragStart = null;
-      if (this.chartSelectionRect) this.chartSelectionRect.attr({ invisible: true });
       this.startTime = original.startTime;
       this.endTime = original.endTime;
       this.loadFlightData({ fromChartRange: true });
@@ -1452,16 +1454,10 @@ export default {
         this.legendValues[item.name] = '-';
       });
 
-      const visibleSeries = new Set(['Ping']);
-      const selected = {};
-      series.forEach(item => {
-        const shouldShow = visibleSeries.has(item.name);
-        if (!shouldShow && !series.some(seriesItem => visibleSeries.has(seriesItem.name))) {
-          selected[item.name] = true;
-        } else {
-          selected[item.name] = shouldShow;
-        }
-      });
+      const selected = getChartLegendSelection(
+        series.map(item => item.name),
+        this.chartLegendSelection
+      );
 
       return {
         backgroundColor: theme.backgroundColor,
@@ -1474,17 +1470,28 @@ export default {
           formatter: name => `${name}: ${this.legendValues[name] || '-'}`
         },
         tooltip: {
+          show: true,
+          showContent: true,
           trigger: 'axis',
+          triggerOn: 'mousemove|click',
+          renderMode: 'html',
+          confine: true,
           backgroundColor: theme.tooltipBg,
           borderColor: theme.tooltipBorder,
           textStyle: { color: theme.textColor },
+          axisPointer: {
+            type: 'line',
+            axis: 'x',
+            label: { show: false }
+          },
           formatter: params => {
             if (!params || params.length === 0) return '';
-            const time = params[0].axisValue;
+            const dataIndex = params[0].dataIndex;
+            const time = echarts.format.encodeHTML(String(params[0].axisValue ?? ''));
             let text = `<b>${time}</b><br/>`;
-            params.forEach(param => {
-              const value = param.value === null || param.value === undefined ? '-' : param.value;
-              text += `${param.marker} ${param.seriesName}: ${value}<br/>`;
+            getChartTooltipRows(series, dataIndex).forEach(item => {
+              const marker = `<span style="display:inline-block;margin-right:4px;border-radius:10px;width:10px;height:10px;background-color:${item.color};"></span>`;
+              text += `${marker} ${item.name}: ${this.formatLegendValue(item.name, item.value)}<br/>`;
             });
             return text;
           }
@@ -1513,19 +1520,17 @@ export default {
             splitLine: { lineStyle: { color: theme.gridColor } }
           }
         ],
-        series,
-        axisPointer: {
-          show: true,
-          type: 'line',
-          lineStyle: { color: theme.axisColor, width: 1 },
-          snap: true
-        }
+        series
       };
     },
     initChart() {
       this.$nextTick(() => {
         if (!this.chart) {
           this.chart = echarts.init(this.$refs.chartContainer);
+        } else {
+          this.chartLegendSelection = {
+            ...(this.chart.getOption().legend?.[0]?.selected || this.chartLegendSelection)
+          };
         }
         const renderer = this.chart.getZr();
         renderer.off('mousedown', this.handleChartMouseDown);
@@ -1538,8 +1543,42 @@ export default {
         renderer.on('contextmenu', this.handleChartContextMenu);
         this.chart.off('click', this.handleChartClick);
         this.chart.on('click', this.handleChartClick);
+        this.chart.off('legendselectchanged', this.handleChartLegendChange);
+        this.chart.on('legendselectchanged', this.handleChartLegendChange);
         this.chart.setOption(this.buildChartOption(), true);
+        this.clearChartInteraction();
       });
+    },
+    hideChartIndicators() {
+      if (!this.chart) return;
+      this.chart.dispatchAction({ type: 'hideTip' });
+      this.chart.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' });
+    },
+    clearChartInteraction() {
+      this.hideChartIndicators();
+      this.chartDragStart = null;
+      if (this.chartSelectionRect && this.chart) {
+        this.chart.getZr().remove(this.chartSelectionRect);
+        this.chartSelectionRect = null;
+      }
+    },
+    handleChartLegendChange(event) {
+      this.chartLegendSelection = { ...event.selected };
+      if (!event.selected?.[event.name] || !this.chart) return;
+
+      const option = this.chart.getOption();
+      const selectedSeries = option.series.find(item => item.name === event.name);
+      if (!selectedSeries) return;
+      const axisIndex = Number(selectedSeries.yAxisIndex || 0);
+      const currentMax = this.chart.getModel()
+        .getComponent('yAxis', axisIndex)?.axis?.scale?.getExtent?.()[1];
+      const nextMax = getExpandedAxisMax(currentMax, selectedSeries.data || []);
+      if (nextMax === null) return;
+
+      const yAxis = option.yAxis.map((axis, index) => (
+        index === axisIndex ? { ...axis, max: nextMax } : axis
+      ));
+      this.chart.setOption({ yAxis });
     },
     updateChartPointer(idx, seriesIndex = 0) {
       if (!this.chart) return;
@@ -1643,6 +1682,8 @@ export default {
       renderer.off('mousemove', this.handleChartMouseMove);
       renderer.off('mouseup', this.handleChartMouseUp);
       renderer.off('contextmenu', this.handleChartContextMenu);
+      this.chart.off('click', this.handleChartClick);
+      this.chart.off('legendselectchanged', this.handleChartLegendChange);
       if (this.chartSelectionRect) renderer.remove(this.chartSelectionRect);
     }
     window.removeEventListener('resize', this.handleWindowResize);

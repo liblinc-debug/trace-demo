@@ -12,6 +12,48 @@ test('getChartRangeIndices maps a dragged chart range to point indexes', async (
   assert.equal(getChartRangeIndices({ startValue: 3, endValue: 3 }, 10), null);
 });
 
+test('chart legend selection survives a chart rebuild', async () => {
+  const { getChartLegendSelection } = await import('./src/chartState.mjs');
+  const names = ['Loss Rate', 'Ping', 'Signal_dBm'];
+
+  assert.deepEqual(getChartLegendSelection(names, null), {
+    'Loss Rate': false,
+    Ping: true,
+    Signal_dBm: false
+  });
+  assert.deepEqual(getChartLegendSelection(names, {
+    'Loss Rate': true,
+    Ping: false,
+    Signal_dBm: true
+  }), {
+    'Loss Rate': true,
+    Ping: false,
+    Signal_dBm: true
+  });
+});
+
+test('chart y-axis expands only when the selected series exceeds it', async () => {
+  const { getExpandedAxisMax } = await import('./src/chartState.mjs');
+
+  assert.equal(getExpandedAxisMax(100, [20, null, 140]), 140);
+  assert.equal(getExpandedAxisMax(100, [20, 80, 100]), null);
+  assert.equal(getExpandedAxisMax(-80, [-95, -70]), -70);
+  assert.equal(getExpandedAxisMax(100, [null, '', undefined]), null);
+});
+
+test('chart tooltip includes every available series at the hovered time', async () => {
+  const { getChartTooltipRows } = await import('./src/chartState.mjs');
+  const rows = getChartTooltipRows([
+    { name: 'Ping', itemStyle: { color: 'green' }, data: [18, 22] },
+    { name: 'Loss Rate', itemStyle: { color: 'yellow' }, data: [0.5, 1.2] }
+  ], 1);
+
+  assert.deepEqual(rows, [
+    { name: 'Ping', color: 'green', value: 22 },
+    { name: 'Loss Rate', color: 'yellow', value: 1.2 }
+  ]);
+});
+
 test('parseFlightQuery validates and de-duplicates the selection', () => {
   const result = parseFlightQuery({
     aircraftIds: 'uav-2-20,uav-2-20,uav-2-203',
