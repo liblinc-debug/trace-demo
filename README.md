@@ -39,21 +39,31 @@
    CLICKHOUSE_PASSWORD=你的_ClickHouse_密码
    ```
 
-3. 一键安装依赖并启动开发环境：
+3. Linux 一键安装为 systemd 服务：
 
    ```sh
    ./install.sh
    ```
 
-   浏览器访问 `http://localhost:5173`。按 `Ctrl+C` 可同时停止前后端服务。
+   脚本会安装依赖、构建前端、创建 `trace-demo.service`，然后设置开机自启并启动服务。浏览器访问 `http://localhost:4000`。
 
-生产模式会先构建前端，再由 Express 提供静态文件和 API：
+   常用管理命令：
+
+   ```sh
+   systemctl status trace-demo.service
+   journalctl -u trace-demo.service -f
+   sudo systemctl restart trace-demo.service
+   ```
+
+开发模式仍以前台方式同时启动 Express 和 Vite，支持 Linux 与 macOS：
 
 ```sh
-./install.sh production
+./install.sh development
 ```
 
-浏览器访问 `http://localhost:4000`。
+浏览器访问 `http://localhost:5173`。按 `Ctrl+C` 可同时停止前后端服务。
+
+`production`、`prod`、`systemd` 和 `service` 参数均会执行 systemd 安装。可以通过 `SERVICE_NAME`、`SERVICE_USER` 和 `SERVICE_GROUP` 覆盖默认服务名及运行用户。
 
 ### 环境参数
 
@@ -76,7 +86,7 @@
 脚本默认读取项目根目录的 `.env`。也可以通过 `ENV_FILE` 引入其他环境文件：
 
 ```sh
-ENV_FILE=.env.production ./install.sh production
+ENV_FILE=.env.production ./install.sh
 ```
 
 接口说明：

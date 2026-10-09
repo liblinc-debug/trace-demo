@@ -11,6 +11,17 @@ case "$(uname -s)" in
   *) echo "错误：仅支持 macOS 与 Linux。" >&2; exit 1 ;;
 esac
 
+RUN_MODE="${1:-systemd}"
+case "$RUN_MODE" in
+  development|dev|production|prod|systemd|service) ;;
+  *) echo "错误：启动模式只能是 development/dev 或 production/prod/systemd/service。" >&2; exit 1 ;;
+esac
+
+if [[ "$RUN_MODE" != "development" && "$RUN_MODE" != "dev" && "$OS_NAME" != "Linux" ]]; then
+  echo "错误：systemd 服务只能安装在 Linux；macOS 开发环境请执行 ./install.sh development。" >&2
+  exit 1
+fi
+
 for command_name in node npm zip; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "错误：未找到 $command_name，请先安装 Node.js 18+、npm 和 zip。" >&2
@@ -25,6 +36,9 @@ if (( NODE_MAJOR < 18 )); then
 fi
 
 ENV_FILE="${ENV_FILE:-$PROJECT_DIR/.env}"
+if [[ "$ENV_FILE" != /* ]]; then
+  ENV_FILE="$PROJECT_DIR/${ENV_FILE#./}"
+fi
 if [[ ! -f "$ENV_FILE" ]]; then
   if [[ "$ENV_FILE" == "$PROJECT_DIR/.env" ]]; then
     cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"
@@ -52,12 +66,6 @@ if [[ -z "${CLICKHOUSE_PASSWORD:-}" || "$CLICKHOUSE_PASSWORD" == "your_clickhous
   exit 1
 fi
 
-RUN_MODE="${1:-development}"
-case "$RUN_MODE" in
-  development|dev|production|prod) ;;
-  *) echo "错误：启动模式只能是 development/dev 或 production/prod。" >&2; exit 1 ;;
-esac
-
 echo "系统：${OS_NAME}；环境文件：${ENV_FILE}；启动模式：${RUN_MODE}"
 echo "正在安装项目依赖..."
 npm ci
@@ -66,8 +74,89 @@ case "$RUN_MODE" in
   development|dev)
     exec npm run dev
     ;;
-  production|prod)
+  production|prod|systemd|service)
+    if ! command -v systemctl >/dev/null 2>&1; then
+      echo "错误：未找到 systemctl，请确认目标 Linux 使用 systemd。" >&2
+      exit 1
+    fi
+    if (( EUID != 0 )) && ! command -v sudo >/dev/null 2>&1; then
+      echo "错误：安装 systemd 服务需要 root 权限，且当前系统未安装 sudo。" >&2
+      exit 1
+    fi
+
     npm run build
-    exec npm start
+
+    SERVICE_NAME="${SERVICE_NAME:-trace-demo}"
+    if [[ ! "$SERVICE_NAME" =~ ^[A-Za-z0-9_.@-]+$ ]]; then
+      echo "错误：SERVICE_NAME 包含非法字符：$SERVICE_NAME" >&2
+      exit 1
+    fi
+
+    SERVICE_USER="${SERVICE_USER:-${SUDO_USER:-$(id -un)}}"
+    if ! id "$SERVICE_USER" >/dev/null 2>&1; then
+      echo "错误：服务用户不存在：$SERVICE_USER" >&2
+      exit 1
+    fi
+    SERVICE_GROUP="${SERVICE_GROUP:-$(id -gn "$SERVICE_USER")}"
+    NODE_BIN="$(command -v node)"
+    UNIT_NAME="${SERVICE_NAME}.service"
+    UNIT_PATH="/etc/systemd/system/$UNIT_NAME"
+    UNIT_FILE="$(mktemp)"
+    trap 'rm -f "$UNIT_FILE"' EXIT
+
+    systemd_quote() {
+      local value="$1"
+      value="${value//\\/\\\\}"
+      value="${value//\"/\\\"}"
+      value="${value//%/%%}"
+      printf '"%s"' "$value"
+    }
+
+    {
+      echo '[Unit]'
+      echo 'Description=Drone flight trace demo'
+      echo 'Wants=network-online.target'
+      echo 'After=network-online.target'
+      echo
+      echo '[Service]'
+      echo 'Type=simple'
+      printf 'User=%s\n' "$SERVICE_USER"
+      printf 'Group=%s\n' "$SERVICE_GROUP"
+      printf 'WorkingDirectory=%s\n' "$(systemd_quote "$PROJECT_DIR")"
+      printf 'EnvironmentFile=%s\n' "$(systemd_quote "$ENV_FILE")"
+      echo 'Environment=NODE_ENV=production'
+      printf 'ExecStart=%s %s\n' "$(systemd_quote "$NODE_BIN")" "$(systemd_quote "$PROJECT_DIR/server.js")"
+      echo 'Restart=on-failure'
+      echo 'RestartSec=3'
+      echo 'TimeoutStopSec=20'
+      echo 'NoNewPrivileges=true'
+      echo 'PrivateTmp=true'
+      echo
+      echo '[Install]'
+      echo 'WantedBy=multi-user.target'
+    } > "$UNIT_FILE"
+
+    if (( EUID == 0 )); then
+      ROOT_COMMAND=()
+    else
+      ROOT_COMMAND=(sudo)
+    fi
+
+    "${ROOT_COMMAND[@]}" install -m 0644 "$UNIT_FILE" "$UNIT_PATH"
+    "${ROOT_COMMAND[@]}" systemctl daemon-reload
+    "${ROOT_COMMAND[@]}" systemctl enable "$UNIT_NAME"
+    "${ROOT_COMMAND[@]}" systemctl restart "$UNIT_NAME"
+
+    sleep 1
+    if ! "${ROOT_COMMAND[@]}" systemctl is-active --quiet "$UNIT_NAME"; then
+      echo "错误：$UNIT_NAME 启动失败，最近日志如下：" >&2
+      "${ROOT_COMMAND[@]}" systemctl --no-pager --full status "$UNIT_NAME" || true
+      exit 1
+    fi
+
+    echo "systemd 服务已安装并启动：$UNIT_NAME"
+    echo "服务地址：http://localhost:${PORT:-4000}"
+    echo "查看状态：systemctl status $UNIT_NAME"
+    echo "查看日志：journalctl -u $UNIT_NAME -f"
     ;;
 esac
