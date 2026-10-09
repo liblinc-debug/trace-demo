@@ -29,14 +29,38 @@
       <div class="floating-toolbar">
 
         <div class="controls">
-          <label class="control-label time-control">
+          <div class="control-label time-control">
             <span>开始</span>
-            <input v-model="startTime" type="datetime-local" step="1" />
-          </label>
-          <label class="control-label time-control">
+            <input ref="startDateTimeInput" v-model="startTime" type="datetime-local" step="1" />
+            <button
+              type="button"
+              class="datetime-picker-button"
+              aria-label="打开开始日期时间选择框"
+              title="选择开始日期和时间"
+              @click="openDateTimePicker('startDateTimeInput')"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                <path d="M8 3v4M16 3v4M3 10h18"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="control-label time-control">
             <span>结束</span>
-            <input v-model="endTime" type="datetime-local" step="1" />
-          </label>
+            <input ref="endDateTimeInput" v-model="endTime" type="datetime-local" step="1" />
+            <button
+              type="button"
+              class="datetime-picker-button"
+              aria-label="打开结束日期时间选择框"
+              title="选择结束日期和时间"
+              @click="openDateTimePicker('endDateTimeInput')"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                <path d="M8 3v4M16 3v4M3 10h18"></path>
+              </svg>
+            </button>
+          </div>
           <button type="button" class="primary-button" @click="loadFlightData()" :disabled="loading || !hasFlightSelection">
             {{ loading ? '查询中…' : '查询' }}
           </button>
@@ -455,6 +479,14 @@ export default {
       if (Number.isNaN(date.getTime())) return '';
       const pad = number => String(number).padStart(2, '0');
       return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    },
+    openDateTimePicker(refName) {
+      const input = this.$refs[refName];
+      if (typeof input?.showPicker === 'function') {
+        input.showPicker();
+      } else {
+        input?.focus();
+      }
     },
     getRequestError(error, fallback) {
       return error?.response?.data?.error || fallback;
@@ -2301,6 +2333,31 @@ export default {
 
 .controls input[type="datetime-local"] {
   min-width: 184px;
+}
+
+.controls .datetime-picker-button {
+  display: inline-grid;
+  width: 34px;
+  padding: 0;
+  place-items: center;
+  border-color: var(--portal-accent);
+  background: var(--portal-accent-soft);
+  color: var(--portal-accent);
+}
+
+.app-container.night .controls .datetime-picker-button {
+  border-color: var(--portal-accent);
+  background: var(--portal-accent-soft);
+  color: var(--portal-accent);
+}
+
+.datetime-picker-button svg {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 2;
 }
 
 .controls .primary-button {

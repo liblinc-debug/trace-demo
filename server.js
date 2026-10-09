@@ -178,7 +178,9 @@ FORMAT JSONEachRow`;
 app.get('/api/flights', async (req, res) => {
   try {
     const selection = parseFlightQuery(req.query);
-    const text = await queryClickHouse(buildFlightQuery(selection));
+    const sql = buildFlightQuery(selection);
+    console.log(`[ClickHouse SQL]\n${sql}`);
+    const text = await queryClickHouse(sql);
     const rows = text.trim()
       ? text.trim().split('\n').map(line => JSON.parse(line))
       : [];
