@@ -104,14 +104,6 @@ case "$RUN_MODE" in
     UNIT_FILE="$(mktemp)"
     trap 'rm -f "$UNIT_FILE"' EXIT
 
-    systemd_quote() {
-      local value="$1"
-      value="${value//\\/\\\\}"
-      value="${value//\"/\\\"}"
-      value="${value//%/%%}"
-      printf '"%s"' "$value"
-    }
-
     {
       echo '[Unit]'
       echo 'Description=Drone flight trace demo'
@@ -122,10 +114,10 @@ case "$RUN_MODE" in
       echo 'Type=simple'
       printf 'User=%s\n' "$SERVICE_USER"
       printf 'Group=%s\n' "$SERVICE_GROUP"
-      printf 'WorkingDirectory=%s\n' "$(systemd_quote "$PROJECT_DIR")"
-      printf 'EnvironmentFile=%s\n' "$(systemd_quote "$ENV_FILE")"
+      printf 'WorkingDirectory=%s\n' "$PROJECT_DIR"
+      printf 'EnvironmentFile=%s\n' "$ENV_FILE"
       echo 'Environment=NODE_ENV=production'
-      printf 'ExecStart=%s %s\n' "$(systemd_quote "$NODE_BIN")" "$(systemd_quote "$PROJECT_DIR/server.js")"
+      printf 'ExecStart=%s %s\n' "$NODE_BIN" "$PROJECT_DIR/server.js"
       echo 'Restart=on-failure'
       echo 'RestartSec=3'
       echo 'TimeoutStopSec=20'
@@ -143,6 +135,9 @@ case "$RUN_MODE" in
     fi
 
     "${ROOT_COMMAND[@]}" install -m 0644 "$UNIT_FILE" "$UNIT_PATH"
+    if command -v systemd-analyze >/dev/null 2>&1; then
+      "${ROOT_COMMAND[@]}" systemd-analyze verify "$UNIT_PATH"
+    fi
     "${ROOT_COMMAND[@]}" systemctl daemon-reload
     "${ROOT_COMMAND[@]}" systemctl enable "$UNIT_NAME"
     "${ROOT_COMMAND[@]}" systemctl restart "$UNIT_NAME"
